@@ -9,6 +9,7 @@
 
   let config = null, session = null, me = null, profile = null, privateKey = null;
   let socket = null, connected = false, mode = 'login', activePeer = null;
+  let nativeFcmToken = '';
   let onlineUsers = [], chats = new Map(), histories = new Map(), unread = new Map();
   let busy = false, toastTimer = null, typingTimer = null, changedFingerprint = null, replyTarget = null;
 
@@ -102,6 +103,43 @@
       throw error;
     }
     return data;
+  }
+  async function syncNativePushToken() {
+    if (!window.FBChatNative || !me || !session?.access_token) return;
+    try {
+      const token = String(window.FBChatNative.getFcmToken() || '');
+      if (token.length >= 20) nativeFcmToken = token;
+    } catch {}
+    if (!nativeFcmToken) {
+      try { window.FBChatNative.refreshToken(); } catch {}
+      return;
+    }
+    const marker = 'fbchat-fcm-registered-' + me.id;
+    if (localStorage.getItem(marker) === nativeFcmToken) return;
+    try {
+      await api('/api/fcm/register', {
+        method: 'POST',
+        body: JSON.stringify({ token: nativeFcmToken, platform: 'android', device_name: 'FB Chat Android' })
+      });
+      localStorage.setItem(marker, nativeFcmToken);
+    } catch (error) {
+      console.warn('Native push token registration failed:', error?.message || 'request failed');
+    }
+  }
+  function acceptNativeFcmToken(token) {
+    if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return;
+    nativeFcmToken = token;
+    void syncNativePushToken();
+  }
+  async function unregisterNativePushToken() {
+    if (!window.FBChatNative || !me || !session?.access_token || !nativeFcmToken) return;
+    try {
+      await api('/api/fcm/register', {
+        method: 'DELETE',
+        body: JSON.stringify({ token: nativeFcmToken })
+      });
+    } catch {}
+    localStorage.removeItem('fbchat-fcm-registered-' + me.id);
   }
   async function authRequest(path, body) {
     if (!config?.configured || !config.supabaseUrl || !config.supabaseAnonKey)
@@ -541,6 +579,10 @@
     setConnected(false, 'Connecting securely…');
     await loadChats();
     startSocket();
+    if (window.FBChatNative) {
+      void syncNativePushToken();
+      try { window.FBChatNative.refreshToken(); } catch {}
+    }
     handleQueuedNotificationChat();
   }
   function startSocket() {
@@ -748,6 +790,7 @@
     finally { $('#sendBtn').disabled = false; input.focus(); }
   }
   async function signOut() {
+    await unregisterNativePushToken();
     try {
       if (session?.access_token && config?.configured) await fetch(config.supabaseUrl + '/auth/v1/logout', {
         method: 'POST', headers: { apikey: config.supabaseAnonKey, Authorization: 'Bearer ' + session.access_token }
@@ -763,8 +806,10 @@
        { label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
   }
   async function settingsDialog() {
+    const nativeApp = Boolean(window.FBChatNative);
     const soundOn = localStorage.getItem('fbchat-message-sound') !== 'off';
     const pushOn = localStorage.getItem('fbchat-push-enabled') === 'on';
+    const registered = Boolean(me && localStorage.getItem('fbchat-fcm-registered-' + me.id));
     const actions = [
       {
         label: soundOn ? 'Turn message sound off' : 'Turn message sound on',
@@ -775,16 +820,31 @@
         }
       },
       {
-        label: pushOn ? 'Turn off push notifications' : 'Enable push notifications',
+        label: nativeApp
+          ? (registered ? 'Refresh Android notifications' : 'Enable Android notifications')
+          : (pushOn ? 'Turn off push notifications' : 'Enable push notifications'),
         action: async () => {
           $('#genericModal').hidden = true;
-          if (pushOn) await disablePushNotifications(); else await enablePushNotifications();
+          if (nativeApp) {
+            try {
+              window.FBChatNative.requestNotificationPermission();
+              window.FBChatNative.refreshToken();
+              await syncNativePushToken();
+              toast('Android notification setup requested. Allow notifications in Android settings.', 5000);
+            } catch {
+              toast('Open Android app settings and allow notifications.', 5000);
+            }
+          } else if (pushOn) await disablePushNotifications();
+          else await enablePushNotifications();
         }
       },
       { label: 'Privacy & encryption details', action: () => { $('#genericModal').hidden = true; void securityDialog(); } },
       { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
     ];
-    infoModal('Settings', 'Message sound plays while this app is open. Background push requires browser notification permission and server push keys. Your message text is never included in push notifications.', actions);
+    const description = nativeApp
+      ? 'FB Chat will register this Android device for background alerts. Android controls notification permission, sound, and vibration. Message text is not included in push payloads.'
+      : 'Message sound plays while this app is open. Background push requires browser notification permission and server push keys. Your message text is never included in push notifications.';
+    infoModal('Settings', description, actions);
   }
   async function securityDialog() {
     if (!activePeer) {
@@ -895,5 +955,7 @@
       }
     });
   }
+  window.fbchatOnFcmToken = acceptNativeFcmToken;
+  window.fbchatOpenNativeChat = (username) => { void openChatByUsername(username); };
   initialize().catch((error) => { console.error('FB Chat initialization failed:', error); showAuth(error.message || 'Could not initialize. Reload the page.', true); });
 })();

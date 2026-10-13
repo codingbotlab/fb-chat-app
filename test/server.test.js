@@ -1,7 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken } = require('../server');
+
+test('native FCM tokens are bounded and whitespace-free', () => {
+  assert.equal(validFcmToken('f'.repeat(152)), true);
+  assert.equal(validFcmToken('short'), false);
+  assert.equal(validFcmToken('f'.repeat(4097)), false);
+  assert.equal(validFcmToken('f'.repeat(90) + String.fromCharCode(10)), false);
+  assert.equal(validFcmToken('f'.repeat(70) + ' ' + 'f'.repeat(20)), false);
+  assert.equal(validFcmToken(null), false);
+});
 
 test('normalization trims whitespace and case-folds usernames', () => {
   assert.equal(normalize('  Mayank   Kumar '), 'mayank kumar');
@@ -48,6 +57,7 @@ test('health and config endpoints do not expose service-role credentials', async
   assert.equal(health.ok, true);
   assert.equal(health.service, 'fb-chat-app');
   assert.equal(typeof health.authConfigured, 'boolean');
+  assert.equal(typeof health.nativePushConfigured, 'boolean');
   const configResponse = await fetch(base + '/api/config');
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
@@ -165,4 +175,62 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
   assert.match(sw, /fb-chat-shell-v4/);
+});
+
+test('native FCM token validation accepts bounded device tokens only', () => {
+  assert.equal(validFcmToken('token-' + 'a'.repeat(160)), true);
+  assert.equal(validFcmToken('too-short'), false);
+  assert.equal(validFcmToken('a'.repeat(4097)), false);
+  assert.equal(validFcmToken('valid-looking-token '), false);
+  assert.equal(validFcmToken(null), false);
+});
+
+test('Android app is wired for Firebase Cloud Messaging and safe generic push payloads', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const android = path.join(__dirname, '..', 'android');
+  const appGradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
+  const rootGradle = fs.readFileSync(path.join(android, 'build.gradle'), 'utf8');
+  const manifest = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+  const activity = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
+  const messaging = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'FBChatMessagingService.java'), 'utf8');
+  const web = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const firebase = JSON.parse(fs.readFileSync(path.join(android, 'app', 'google-services.json'), 'utf8'));
+  assert.equal(firebase.project_info.project_id, 'fbchat-native-push-20261014');
+  assert.equal(firebase.client[0].client_info.android_client_info.package_name, 'com.codingbotlab.fbchat');
+  assert.match(rootGradle, /com\.google\.gms\.google-services/);
+  assert.match(appGradle, /com\.google\.firebase:firebase-messaging/);
+  assert.match(manifest, /POST_NOTIFICATIONS/);
+  assert.match(manifest, /com\.google\.firebase\.MESSAGING_EVENT/);
+  assert.match(activity, /addJavascriptInterface/);
+  assert.match(activity, /FirebaseMessaging\.getInstance\(\)\.getToken\(\)/);
+  assert.match(messaging, /onMessageReceived/);
+  assert.match(messaging, /You have a new encrypted message/);
+  assert.match(web, /\/api\/fcm\/register/);
+  assert.match(web, /fbchatOnFcmToken/);
+  assert.match(web, /fbchatOpenNativeChat/);
+});
+
+
+test('native FCM integration registers Android tokens and declares notification service', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  const manifest = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+  const nativeService = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'FBChatMessagingService.java'), 'utf8');
+  const gradle = fs.readFileSync(path.join(root, 'android', 'app', 'build.gradle'), 'utf8');
+  const firebaseConfig = JSON.parse(fs.readFileSync(path.join(root, 'android', 'app', 'google-services.json'), 'utf8'));
+  assert.match(js, /window\.fbchatOnFcmToken/);
+  assert.match(js, /\/api\/fcm\/register/);
+  assert.match(server, /sendNativePushToUser/);
+  assert.match(server, /sendEachForMulticast/);
+  assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
+  assert.match(manifest, /\.FBChatMessagingService/);
+  assert.match(nativeService, /onMessageReceived/);
+  assert.match(nativeService, /RingtoneManager\.TYPE_NOTIFICATION/);
+  assert.match(gradle, /com\.google\.firebase:firebase-messaging/);
+  assert.equal(firebaseConfig.project_info.project_id, 'fbchat-native-push-20261014');
+  assert.equal(firebaseConfig.client[0].client_info.android_client_info.package_name, 'com.codingbotlab.fbchat');
 });

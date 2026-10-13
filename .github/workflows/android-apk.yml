@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [pwa-mobile-autoupdate]
+    branches: [main, native-fcm-notifications]
     paths:
       - 'android/**'
       - '.github/workflows/android-apk.yml'

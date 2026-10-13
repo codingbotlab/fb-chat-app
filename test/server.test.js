@@ -31,6 +31,7 @@ test('encrypted message validation accepts ciphertext and 96-bit IV encoding', (
   assert.equal(validEncryptedMessage({ ciphertext: 'abc', iv: 'short' }), false);
   assert.equal(validEncryptedMessage({ ciphertext: 'a'.repeat(65537), iv: 'abcdefghijklmnop' }), false);
   assert.equal(validEncryptedMessage({ ciphertext: 'abc', iv: 'abcdefghijklmnop', text: 'extra plaintext' }), false);
+  assert.equal(validEncryptedMessage({ ciphertext: 'abc', iv: 'abcdefghijklmnop', plaintext: 'extra plaintext' }), false);
 });
 
 test('health and config endpoints do not expose service-role credentials', async (t) => {

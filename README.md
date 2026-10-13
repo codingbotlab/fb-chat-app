@@ -17,6 +17,14 @@ WhatsApp-inspired real-time one-to-one chat prototype. This branch introduces ac
 4. Set server-only environment variables: \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, and \`SUPABASE_SERVICE_ROLE_KEY\`.
 5. Run \`npm ci\`, \`npm run check\`, \`npm test\`, then \`npm start\`.
 
+## Free Render deployment
+
+- Connect this repository to a Node.js **Web Service** in Render.
+- Build command: \`npm ci\`; start command: \`npm start\`.
+- Add \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, and \`SUPABASE_SERVICE_ROLE_KEY\` in Render's Environment page. Keep the service-role key server-only; never commit it or put it in browser code.
+- After deploying, \`/health\` should report \`authConfigured: true\` and \`/api/config\` should report \`configured: true\`. A missing key intentionally leaves sign-up disabled.
+- Free web services may sleep when idle; cold starts may delay the first connection. Check provider usage and database backups before relying on the service.
+
 Never put the service-role key in frontend code, Git, or public issues. \`GET /api/config\` returns only the public anon key and configured state.
 
 ## Features in this iteration

@@ -1,4 +1,4 @@
-﻿package com.codingbotlab.fbchat;
+package com.codingbotlab.fbchat;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;

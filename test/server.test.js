@@ -67,3 +67,21 @@ test('profile endpoint fails closed while database setup is absent', async (t) =
   const payload = await response.json();
   assert.equal(payload.error, 'SERVER_NOT_CONFIGURED');
 });
+
+test('WhatsApp-style screen includes all required UI targets and no canned sample chats', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  for (const id of [
+    'app', 'chatList', 'chatSearch', 'newChat', 'emptyNewChat', 'welcomeNewChat',
+    'authOverlay', 'authForm', 'loginTab', 'signupTab', 'displayName', 'username',
+    'email', 'password', 'chatDetails', 'messages', 'composeForm', 'messageInput',
+    'sendBtn', 'genericModal', 'genericForm', 'genericInput', 'connectionDot'
+  ]) {
+    assert.match(html, new RegExp('id="' + id + '"'), 'missing UI element: ' + id);
+  }
+  assert.match(js, /encryptText|async function encryptText/);
+  assert.match(js, /decryptText|async function decryptText/);
+  assert.doesNotMatch(html + js, /Aarav Sharma|Sana Khan|Creators Club/);
+});

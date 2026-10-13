@@ -58,6 +58,7 @@ test('health and config endpoints do not expose service-role credentials', async
   assert.equal(health.service, 'fb-chat-app');
   assert.equal(typeof health.authConfigured, 'boolean');
   assert.equal(typeof health.nativePushConfigured, 'boolean');
+  assert.equal(health.nativePushConfigured, false);
   const configResponse = await fetch(base + '/api/config');
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();

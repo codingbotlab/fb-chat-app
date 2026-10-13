@@ -117,10 +117,15 @@
     const marker = 'fbchat-fcm-registered-' + me.id;
     if (localStorage.getItem(marker) === nativeFcmToken) return;
     try {
-      await api('/api/fcm/register', {
+      const registration = await api('/api/fcm/register', {
         method: 'POST',
         body: JSON.stringify({ token: nativeFcmToken, platform: 'android', device_name: 'FB Chat Android' })
       });
+      if (!registration.configured) {
+        console.warn('Android token saved; native FCM sender is not configured on the server yet.');
+        localStorage.removeItem(marker);
+        return;
+      }
       localStorage.setItem(marker, nativeFcmToken);
     } catch (error) {
       console.warn('Native push token registration failed:', error?.message || 'request failed');

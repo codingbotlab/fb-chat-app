@@ -10,7 +10,7 @@
   let config = null, session = null, me = null, profile = null, privateKey = null;
   let socket = null, connected = false, mode = 'login', activePeer = null;
   let onlineUsers = [], chats = new Map(), histories = new Map(), unread = new Map();
-  let busy = false, toastTimer = null, typingTimer = null, changedFingerprint = null;
+  let busy = false, toastTimer = null, typingTimer = null, changedFingerprint = null, replyTarget = null;
 
   const norm = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const to64 = (buffer) => {
@@ -275,6 +275,121 @@
       return td.decode(plain);
     } catch { return '[Unable to decrypt on this device]'; }
   }
+  function decodeMessageContent(raw) {
+    try {
+      const value = JSON.parse(raw);
+      if (value && value.version === 1 && typeof value.text === 'string') {
+        return { plaintext: value.text, reply: value.reply && typeof value.reply.text === 'string' ? value.reply : null };
+      }
+    } catch {}
+    return { plaintext: String(raw || ''), reply: null };
+  }
+  function starStorageKey() { return 'fbchat-starred-' + (me?.id || 'anonymous'); }
+  function hiddenStorageKey() { return 'fbchat-hidden-' + (me?.id || 'anonymous'); }
+  function readStoredSet(key) {
+    try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch { return new Set(); }
+  }
+  function playMessageSound() {
+    if (localStorage.getItem('fbchat-message-sound') === 'off') return;
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const context = new AudioContextClass();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, context.currentTime);
+      oscillator.frequency.setValueAtTime(1175, context.currentTime + 0.075);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.09, context.currentTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.19);
+      oscillator.connect(gain); gain.connect(context.destination);
+      oscillator.start(); oscillator.stop(context.currentTime + 0.2);
+      oscillator.addEventListener('ended', () => context.close().catch(() => {}), { once: true });
+      context.resume().catch(() => {});
+    } catch {}
+  }
+  function urlBase64ToUint8Array(value) {
+    const padding = '='.repeat((4 - value.length % 4) % 4);
+    const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+  }
+  async function enablePushNotifications() {
+    if (!me || !session?.access_token) { showAuth('Sign in to enable message notifications.'); return; }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      toast('Background push is not supported in this app container. Install FB Chat from Chrome for PWA push, or use a native FCM-enabled APK.');
+      return;
+    }
+    try {
+      const info = await fetch('/api/push/public-key', { cache: 'no-store' }).then((response) => response.json());
+      if (!info.enabled || !info.publicKey) {
+        toast('Server push is not configured yet. The app needs its VAPID keys and push database table.', 5000);
+        return;
+      }
+      const permission = Notification.permission === 'granted'
+        ? 'granted' : await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast('Allow notifications in Android app/site settings to receive message alerts.', 5000);
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(info.publicKey)
+        });
+      }
+      await api('/api/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({ subscription: subscription.toJSON() })
+      });
+      localStorage.setItem('fbchat-push-enabled', 'on');
+      toast('Push enabled. Background messages use your Android notification sound and vibration.', 4500);
+    } catch (error) {
+      toast(error.message || 'Could not enable push notifications.', 4500);
+    }
+  }
+  async function disablePushNotifications() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager?.getSubscription();
+      if (subscription) {
+        try { await api('/api/push/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint: subscription.endpoint }) }); } catch {}
+        await subscription.unsubscribe();
+      }
+      localStorage.removeItem('fbchat-push-enabled');
+      toast('Message push notifications turned off.');
+    } catch (error) { toast(error.message || 'Could not turn notifications off.'); }
+  }
+  async function openChatByUsername(username) {
+    const cleaned = norm(username);
+    if (!USER_RE.test(cleaned)) return;
+    if (!me) {
+      sessionStorage.setItem('fbchat-open-chat', cleaned);
+      return;
+    }
+    try {
+      const data = await api('/api/users/' + encodeURIComponent(cleaned));
+      addChat(data.profile);
+      await openChat(data.profile);
+    } catch (error) {
+      toast(error.message || 'Could not open chat from notification.');
+    }
+  }
+  function handleQueuedNotificationChat() {
+    if (!me) return;
+    const params = new URLSearchParams(location.search);
+    const username = params.get('openChat') || sessionStorage.getItem('fbchat-open-chat');
+    if (!username) return;
+    sessionStorage.removeItem('fbchat-open-chat');
+    if (params.has('openChat')) {
+      params.delete('openChat');
+      history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params.toString() : '') + location.hash);
+    }
+    void openChatByUsername(username);
+  }
   async function checkPeerKey(peer) {
     const fp = await fingerprint(peer.public_key), store = 'fbchat-peer-pin-' + peer.id, prior = localStorage.getItem(store);
     if (prior && prior !== fp) return { trusted: false, fingerprint: fp };
@@ -333,16 +448,49 @@
   }
   function renderHistory(peerId) {
     const root = $('#messages'), list = histories.get(peerId) || [];
+    const hidden = readStoredSet(hiddenStorageKey()), starred = readStoredSet(starStorageKey());
+    const visible = list.filter((message) => !hidden.has(message.id));
     root.replaceChildren();
     const divider = document.createElement('div'); divider.className = 'daydivider'; divider.textContent = '🔒 END-TO-END ENCRYPTED'; root.appendChild(divider);
-    if (!list.length) { const note = document.createElement('div'); note.className = 'systemnote'; note.textContent = 'Messages are encrypted on this device. Send a hello to start.'; root.appendChild(note); }
-    for (const message of list) {
-      const bubble = document.createElement('div'); bubble.className = 'bubble' + (message.sender_id === me.id ? ' mine' : '');
-      bubble.textContent = message.plaintext || '';
+    if (!visible.length) {
+      const note = document.createElement('div'); note.className = 'systemnote';
+      note.textContent = list.length ? 'No visible messages in this chat.' : 'Messages are encrypted on this device. Send a hello to start.';
+      root.appendChild(note);
+    }
+    let previousDay = '';
+    for (const message of visible) {
+      const date = new Date(message.created_at || Date.now());
+      const dayKey = Number.isNaN(date.getTime()) ? 'unknown' : date.toDateString();
+      if (dayKey !== previousDay) {
+        previousDay = dayKey;
+        const label = document.createElement('div'); label.className = 'message-date';
+        const today = new Date(), yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+        label.textContent = dayKey === today.toDateString() ? 'Today'
+          : dayKey === yesterday.toDateString() ? 'Yesterday'
+            : Number.isNaN(date.getTime()) ? 'Earlier' : date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        root.appendChild(label);
+      }
+      const bubble = document.createElement('article');
+      bubble.className = 'bubble' + (message.sender_id === me.id ? ' mine' : '');
+      bubble.dataset.messageId = message.id;
+      if (message.reply && typeof message.reply.text === 'string') {
+        const quote = document.createElement('div'); quote.className = 'reply-quote';
+        const author = document.createElement('strong'); author.textContent = message.reply.author || 'Reply';
+        const snippet = document.createElement('span'); snippet.textContent = message.reply.text.slice(0, 280);
+        quote.append(author, snippet); bubble.appendChild(quote);
+      }
+      const body = document.createElement('div'); body.className = 'bubble-text'; body.textContent = message.plaintext || '';
+      bubble.appendChild(body);
       const meta = document.createElement('div'); meta.className = 'bmeta';
+      if (starred.has(message.id)) {
+        const star = document.createElement('span'); star.className = 'star-mark'; star.textContent = '★'; star.title = 'Starred message'; meta.appendChild(star);
+      }
       const time = document.createElement('span'); time.textContent = clock(message.created_at); meta.appendChild(time);
       if (message.sender_id === me.id) { const ticks = document.createElement('span'); ticks.className = 'ticks'; ticks.textContent = message.read_at ? '✓✓' : (message.delivered_at ? '✓✓' : '✓'); meta.appendChild(ticks); }
-      bubble.appendChild(meta); root.appendChild(bubble);
+      const more = document.createElement('button'); more.type = 'button'; more.className = 'message-more';
+      more.setAttribute('aria-label', 'Message options'); more.title = 'Message options'; more.textContent = '⋮';
+      more.addEventListener('click', (event) => { event.stopPropagation(); messageActionsDialog(message); });
+      bubble.append(more, meta); root.appendChild(bubble);
     }
     root.scrollTop = root.scrollHeight;
   }
@@ -366,7 +514,10 @@
       const data = await api('/api/chats/' + encodeURIComponent(person.username) + '/messages');
       addChat(data.peer);
       const history = [];
-      for (const message of data.messages || []) history.push(Object.assign({}, message, { plaintext: await decryptText(message, person) }));
+      for (const message of data.messages || []) {
+        const decoded = decodeMessageContent(await decryptText(message, person));
+        history.push(Object.assign({}, message, decoded));
+      }
       histories.set(person.id, history);
       const last = history[history.length - 1], entry = chats.get(person.id);
       if (entry && last) entry.lastMessage = Object.assign({}, last, { preview: last.plaintext || '🔒 Encrypted message' });
@@ -390,6 +541,7 @@
     setConnected(false, 'Connecting securely…');
     await loadChats();
     startSocket();
+    handleQueuedNotificationChat();
   }
   function startSocket() {
     try { socket?.disconnect(); } catch {}
@@ -408,7 +560,10 @@
     socket.on('chat:history', async (data) => {
       if (!data?.peer || !Array.isArray(data.messages) || activePeer?.id !== data.peer.id) return;
       const history = [];
-      for (const message of data.messages) history.push(Object.assign({}, message, { plaintext: await decryptText(message, activePeer) }));
+      for (const message of data.messages) {
+        const decoded = decodeMessageContent(await decryptText(message, activePeer));
+        history.push(Object.assign({}, message, decoded));
+      }
       if (activePeer?.id !== data.peer.id) return;
       histories.set(data.peer.id, history); renderHistory(data.peer.id);
     });
@@ -421,7 +576,9 @@
       if (!person) return;
       const history = histories.get(person.id) || [];
       if (history.some((item) => item.id === message.id)) return;
-      const plain = await decryptText(message, person), saved = Object.assign({}, message, { plaintext: plain });
+      playMessageSound();
+      const decoded = decodeMessageContent(await decryptText(message, person));
+      const plain = decoded.plaintext, saved = Object.assign({}, message, decoded);
       history.push(saved); histories.set(person.id, history);
       const item = chats.get(person.id);
       if (item) item.lastMessage = Object.assign({}, saved, { preview: plain });
@@ -507,6 +664,60 @@
     } catch (error) { $('#genericFoot').textContent = error.message || 'Could not find that account.'; toast(error.message || 'Could not find that account.'); }
     finally { $('#genericSubmit').disabled = false; }
   }
+  function messageActionsDialog(message) {
+    const starred = readStoredSet(starStorageKey()).has(message.id);
+    const actions = [
+      {
+        label: 'Reply',
+        action: () => {
+          replyTarget = {
+            id: message.id,
+            author: message.sender_id === me.id ? 'You' : nameOf(activePeer),
+            text: String(message.plaintext || '').slice(0, 280)
+          };
+          $('#replyText').textContent = 'Replying to ' + replyTarget.author + ': ' + replyTarget.text;
+          $('#replyBar').hidden = false;
+          $('#genericModal').hidden = true;
+          $('#messageInput').focus();
+        }
+      },
+      {
+        label: 'Copy message',
+        action: async () => {
+          try {
+            await navigator.clipboard.writeText(String(message.plaintext || ''));
+            toast('Message copied.');
+          } catch { toast('Copy is not available in this browser.'); }
+          $('#genericModal').hidden = true;
+        }
+      },
+      {
+        label: starred ? 'Remove star' : 'Star message',
+        action: () => {
+          const values = readStoredSet(starStorageKey());
+          if (values.has(message.id)) values.delete(message.id); else values.add(message.id);
+          localStorage.setItem(starStorageKey(), JSON.stringify([...values]));
+          $('#genericModal').hidden = true;
+          if (activePeer) renderHistory(activePeer.id);
+          toast(values.has(message.id) ? 'Message starred on this device.' : 'Star removed.');
+        }
+      },
+      {
+        label: 'Delete for me',
+        className: 'danger-action',
+        action: () => {
+          const values = readStoredSet(hiddenStorageKey());
+          values.add(message.id);
+          localStorage.setItem(hiddenStorageKey(), JSON.stringify([...values]));
+          $('#genericModal').hidden = true;
+          if (activePeer) renderHistory(activePeer.id);
+          toast('Message hidden on this device only.');
+        }
+      },
+      { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
+    ];
+    infoModal('Message options', 'Actions apply to this message. Starred and hidden-message settings are saved only on this device.', actions);
+  }
   async function sendMessage(event) {
     event.preventDefault();
     if (!activePeer || !profile) return;
@@ -517,16 +728,20 @@
     if (changedFingerprint) { toast('Verify the contact fingerprint before sending.'); return; }
     $('#sendBtn').disabled = true;
     try {
-      const encrypted = await encryptText(text, activePeer);
+      const reply = replyTarget ? { id: replyTarget.id, author: replyTarget.author, text: replyTarget.text } : null;
+      const encrypted = await encryptText(JSON.stringify({ version: 1, text, reply }), activePeer);
       await new Promise((resolve, reject) => {
         socket.timeout(12000).emit('chat:send', Object.assign({ to: activePeer.username }, encrypted), (timeout, ack) => {
           if (timeout) return reject(new Error('No server acknowledgement. Please retry.'));
           if (ack?.error) return reject(new Error(ack.error));
           if (!ack?.message?.id) return reject(new Error('The server did not confirm saving this message.'));
-          const saved = Object.assign({}, ack.message, { plaintext: text });
+          const saved = Object.assign({}, ack.message, { plaintext: text, reply });
           const history = histories.get(activePeer.id) || []; history.push(saved); histories.set(activePeer.id, history);
           addChat(activePeer, Object.assign({}, saved, { preview: text })); renderHistory(activePeer.id);
-          input.value = ''; input.style.height = '24px'; if (ack.delivered) toast('Message sent securely.', 1200); resolve();
+          input.value = ''; input.style.height = '24px';
+          replyTarget = null; $('#replyBar').hidden = true; $('#replyText').textContent = '';
+          $('#emojiPicker').hidden = true;
+          if (ack.delivered) toast('Message sent securely.', 1200); resolve();
         });
       });
     } catch (error) { toast(error.message || 'Could not send the message.'); }
@@ -546,6 +761,30 @@
     infoModal('Your account', nameOf(profile) + '\n@' + profile.username + '\n' + (me.email || ''),
       [{ label: 'Sign out', className: 'danger-action', action: signOut },
        { label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
+  }
+  async function settingsDialog() {
+    const soundOn = localStorage.getItem('fbchat-message-sound') !== 'off';
+    const pushOn = localStorage.getItem('fbchat-push-enabled') === 'on';
+    const actions = [
+      {
+        label: soundOn ? 'Turn message sound off' : 'Turn message sound on',
+        action: () => {
+          localStorage.setItem('fbchat-message-sound', soundOn ? 'off' : 'on');
+          $('#genericModal').hidden = true;
+          toast(soundOn ? 'Message sound turned off.' : 'Message sound turned on.');
+        }
+      },
+      {
+        label: pushOn ? 'Turn off push notifications' : 'Enable push notifications',
+        action: async () => {
+          $('#genericModal').hidden = true;
+          if (pushOn) await disablePushNotifications(); else await enablePushNotifications();
+        }
+      },
+      { label: 'Privacy & encryption details', action: () => { $('#genericModal').hidden = true; void securityDialog(); } },
+      { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
+    ];
+    infoModal('Settings', 'Message sound plays while this app is open. Background push requires browser notification permission and server push keys. Your message text is never included in push notifications.', actions);
   }
   async function securityDialog() {
     if (!activePeer) {
@@ -597,7 +836,17 @@
       }
     });
     $('#emojiBtn').addEventListener('click', () => {
-      const input = $('#messageInput'); input.value += ' 😊'; input.focus(); input.dispatchEvent(new Event('input'));
+      $('#emojiPicker').hidden = !$('#emojiPicker').hidden;
+    });
+    $$('.emoji-choice').forEach((button) => button.addEventListener('click', () => {
+      const input = $('#messageInput');
+      const start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? input.value.length;
+      input.setRangeText(button.dataset.emoji, start, end, 'end');
+      input.focus(); input.dispatchEvent(new Event('input'));
+      $('#emojiPicker').hidden = true;
+    }));
+    $('#cancelReply').addEventListener('click', () => {
+      replyTarget = null; $('#replyBar').hidden = true; $('#replyText').textContent = ''; $('#messageInput').focus();
     });
     $('#searchInChat').addEventListener('click', () => {
       if (!activePeer) return;
@@ -609,7 +858,8 @@
     });
     $('#chatDetails').addEventListener('click', securityDialog);
     $('#profileButton').addEventListener('click', profileDialog);
-    $('#settingsButton').addEventListener('click', securityDialog);
+    $('#settingsButton').addEventListener('click', settingsDialog);
+    $('#mobileSettingsButton').addEventListener('click', settingsDialog);
     $$('[data-rail]').forEach((button) => button.addEventListener('click', () => {
       $$('[data-rail]').forEach((item) => item.classList.toggle('active', item === button));
       if (button.dataset.rail === 'chats') return;
@@ -634,6 +884,16 @@
       catch (error) { const msg = error.message || 'Please sign in again.'; clearSession(); showAuth(msg, true); }
     } else showAuth();
     renderChats();
+  }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'FBCHAT_PUSH') {
+        if (event.data.username) toast('New encrypted message from @' + event.data.username, 2800);
+      }
+      if (event.data?.type === 'FBCHAT_OPEN_CHAT' && event.data.username) {
+        void openChatByUsername(event.data.username);
+      }
+    });
   }
   initialize().catch((error) => { console.error('FB Chat initialization failed:', error); showAuth(error.message || 'Could not initialize. Reload the page.', true); });
 })();

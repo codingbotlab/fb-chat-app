@@ -31,7 +31,10 @@
     <section class="inbox" aria-label="Conversations">
       <header class="inboxhead">
         <div class="inbox-title"><h1>Chats</h1><div class="subline"><span class="connection-dot" id="connectionDot"></span><span id="inboxSub">Secure messaging</span></div></div>
-        <button id="newChat" class="iconbtn newchat" title="New chat" aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <div class="inbox-actions">
+          <button id="mobileSettingsButton" class="iconbtn mobile-settings" title="Message sound and notifications" aria-label="Message sound and notifications"><svg viewBox="0 0 24 24"><path d="M12 3a2 2 0 0 0-2 2v.4a7 7 0 0 0-4.5 6.6V16l-1.5 2h16L18.5 16v-4a7 7 0 0 0-4.5-6.6V5a2 2 0 0 0-2-2Z"/><path d="M9 21h6"/></svg></button>
+          <button id="newChat" class="iconbtn newchat" title="New chat" aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
       </header>
       <div class="searchwrap"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><input id="chatSearch" class="search" placeholder="Search chats or people" autocomplete="off" aria-label="Search chats"></div>
       <div class="filterrow">
@@ -68,6 +71,20 @@
       <div class="typingline" id="typingLine" hidden>typing…</div>
       <div class="composerwrap" id="composerWrap" hidden>
         <div class="replybar" id="replyBar" hidden><span id="replyText">Encrypted chat</span><button id="cancelReply" aria-label="Close">×</button></div>
+        <div class="emoji-picker" id="emojiPicker" hidden aria-label="Choose emoji">
+          <button type="button" class="emoji-choice" data-emoji="😀" aria-label="Grinning face">😀</button>
+          <button type="button" class="emoji-choice" data-emoji="😂" aria-label="Laughing face">😂</button>
+          <button type="button" class="emoji-choice" data-emoji="🥹" aria-label="Holding back tears">🥹</button>
+          <button type="button" class="emoji-choice" data-emoji="😍" aria-label="Heart eyes">😍</button>
+          <button type="button" class="emoji-choice" data-emoji="😘" aria-label="Kiss">😘</button>
+          <button type="button" class="emoji-choice" data-emoji="😊" aria-label="Smiling face">😊</button>
+          <button type="button" class="emoji-choice" data-emoji="❤️" aria-label="Red heart">❤️</button>
+          <button type="button" class="emoji-choice" data-emoji="👍" aria-label="Thumbs up">👍</button>
+          <button type="button" class="emoji-choice" data-emoji="🙏" aria-label="Folded hands">🙏</button>
+          <button type="button" class="emoji-choice" data-emoji="🔥" aria-label="Fire">🔥</button>
+          <button type="button" class="emoji-choice" data-emoji="🎉" aria-label="Party">🎉</button>
+          <button type="button" class="emoji-choice" data-emoji="💯" aria-label="100">💯</button>
+        </div>
         <form class="compose" id="composeForm">
           <button type="button" class="iconbtn compose-tool" id="emojiBtn" title="Insert emoji" aria-label="Insert emoji"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.3 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg></button>
           <div class="messagebox"><textarea id="messageInput" rows="1" maxlength="4000" placeholder="Type a message" autocomplete="off" aria-label="Message text"></textarea></div>

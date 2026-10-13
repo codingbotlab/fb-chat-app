@@ -1,5 +1,5 @@
 'use strict';
-const CACHE_NAME = 'fb-chat-shell-v3';
+const CACHE_NAME = 'fb-chat-shell-v4';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -22,6 +22,52 @@ self.addEventListener('activate', (event) => {
     await Promise.all(keys.filter((key) => key.startsWith('fb-chat-shell-') && key !== CACHE_NAME)
       .map((key) => caches.delete(key)));
     await self.clients.claim();
+  })());
+});
+
+self.addEventListener('push', (event) => {
+  event.waitUntil((async () => {
+    let payload = {};
+    try { payload = event.data ? event.data.json() : {}; } catch {}
+    const openClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const foreground = openClients.some((client) => client.visibilityState === 'visible' && client.focused);
+    if (foreground) {
+      for (const client of openClients) {
+        if (client.visibilityState === 'visible') {
+          client.postMessage({ type: 'FBCHAT_PUSH', username: payload.username || '' });
+        }
+      }
+      return;
+    }
+    await self.registration.showNotification(payload.title || 'FB Chat', {
+      body: payload.body || 'You have a new encrypted message',
+      icon: payload.icon || '/icons/icon-192.png',
+      badge: payload.badge || '/icons/icon-192.png',
+      tag: payload.tag || ('fb-chat-' + (payload.username || 'message')),
+      renotify: true,
+      silent: false,
+      vibrate: [140, 70, 140],
+      timestamp: Date.now(),
+      data: { username: payload.username || '', url: payload.url || '/' }
+    });
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  const username = String(data.username || '');
+  const target = new URL('/?openChat=' + encodeURIComponent(username), self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if ('focus' in client) {
+        await client.focus();
+        client.postMessage({ type: 'FBCHAT_OPEN_CHAT', username });
+        return;
+      }
+    }
+    await self.clients.openWindow(target);
   })());
 });
 

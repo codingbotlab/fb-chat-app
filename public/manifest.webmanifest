@@ -1,9 +1,35 @@
 {
-  "name": "FB Chat",
+  "id": "/",
+  "name": "FB Chat — Private Messenger",
   "short_name": "FB Chat",
-  "start_url": "/",
+  "description": "Private direct messaging with encrypted message contents.",
+  "start_url": "/?source=installed-app",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#101815",
-  "theme_color": "#101815",
-  "description": "A clean, real-time messaging app starter."
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0b141a",
+  "theme_color": "#00a884",
+  "categories": ["social", "communication"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }

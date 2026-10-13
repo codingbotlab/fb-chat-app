@@ -86,3 +86,40 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /decryptText|async function decryptText/);
   assert.doesNotMatch(html + js, /Aarav Sharma|Sana Khan|Creators Club/);
 });
+
+test('PWA manifest and app icons satisfy install dimensions', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..', 'public');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+  assert.equal(manifest.name, 'FB Chat — Private Messenger');
+  assert.equal(manifest.display, 'standalone');
+  assert.ok(manifest.start_url.startsWith('/'));
+  assert.ok(manifest.icons.some((item) => item.sizes === '192x192'));
+  assert.ok(manifest.icons.some((item) => item.sizes === '512x512' && item.purpose === 'any'));
+  assert.ok(manifest.icons.some((item) => item.sizes === '512x512' && item.purpose === 'maskable'));
+  for (const icon of manifest.icons) {
+    const bytes = fs.readFileSync(path.join(root, icon.src.replace(/^\//, '')));
+    assert.equal(bytes.toString('hex', 0, 8), '89504e470d0a1a0a', icon.src + ' must be PNG');
+    const size = Number(icon.sizes.split('x')[0]);
+    assert.equal(bytes.readUInt32BE(16), size, icon.src + ' width');
+    assert.equal(bytes.readUInt32BE(20), size, icon.src + ' height');
+  }
+});
+
+test('PWA auto-update keeps API and Socket.IO responses out of Cache Storage', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..', 'public');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const pwa = fs.readFileSync(path.join(root, 'pwa.js'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.match(html, /id="installAppButton"/);
+  assert.match(html, /src="\/pwa\.js"/);
+  assert.match(pwa, /beforeinstallprompt/);
+  assert.match(pwa, /registration\.update\(\)/);
+  assert.match(sw, /self\.skipWaiting\(\)/);
+  assert.match(sw, /await fetch\(request, \{ cache: 'no-store' \}\)/);
+  assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
+  assert.match(sw, /url\.pathname\.startsWith\('\/socket\.io\/'\)/);
+});

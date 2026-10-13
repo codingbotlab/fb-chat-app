@@ -125,6 +125,9 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .authcard input:focus,.modalcard input:focus{border-color:#00a884}
 .fieldhint{margin:6px 0 2px;color:#7e98a2;font-size:9px;line-height:1.5}
 .auth-submit{margin-top:20px;min-height:44px}
+.install-app-btn{display:block;width:100%;min-height:40px;margin-top:9px;padding:9px 12px;border:1px solid #31544f;border-radius:9px;background:#162e2e;color:#9be5ca;font-size:11px;font-weight:700}
+.install-app-btn:hover{background:#203e3a}
+.install-app-btn[hidden]{display:none}
 .auth-message{min-height:16px;margin-top:11px;color:#9bdcc4;font-size:10px;line-height:1.6;overflow-wrap:anywhere}
 .auth-message.error{color:#ff9f99}
 .auth-foot{display:flex;align-items:center;justify-content:center;gap:8px;border-top:1px solid #273a41;margin-top:20px;padding-top:16px;color:#7d969f;font-size:9px;line-height:1.6}

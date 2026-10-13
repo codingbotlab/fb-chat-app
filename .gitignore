@@ -1,6 +1,8 @@
 node_modules/
 .env
 .env.*
+**/fcm-service-account.json
+**/service-account*.json
 !.env.example
 npm-debug.log*
 .DS_Store

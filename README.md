@@ -43,10 +43,19 @@ Never put the service-role key in frontend code, Git, or public issues. \`GET /a
 - Dark, responsive, WhatsApp-inspired chat layout with search and unread/online filters.
 - First-seen peer key pinning and warning when a pinned public key changes.
 - WhatsApp-inspired date dividers, reply previews, emoji picker, message copy/star/hide actions, foreground message sound, and read/delivery ticks.
-- Web Push for the installable Chrome PWA once permission is granted and server VAPID keys are set; payloads include no decrypted message text. Background Android notifications use the device's notification sound/vibration settings.
+- Web Push for the installable Chrome PWA once permission is granted and server VAPID keys are set; payloads include no decrypted message text.
+- Native Android APK supports Firebase Cloud Messaging (FCM) token registration, a high-importance notification channel with system sound/vibration, and tapping a notification to open that sender's chat. The APK needs the matching `google-services.json`; the server needs the private `FCM_SERVICE_ACCOUNT_JSON` and `FCM_PROJECT_ID` environment variables, plus the `fcm_tokens` table created from `supabase/schema.sql`.
 
 ## Important security and feature limits
 
 This is a prototype, not a production-certified WhatsApp replacement. The custom encryption protocol has not received an independent cryptographic audit. There is no multi-device synchronization, contact discovery, groups, media/voice/video calls, polished account recovery, blocking/reporting, moderation, or key backup/restore workflow. Web Push works on the installed Chrome PWA after permission and VAPID configuration; background push in the standalone WebView APK still needs Firebase Cloud Messaging integration. First-contact key pinning does not independently verify a contact's identity; compare fingerprints out-of-band for sensitive conversations. The password-derived encrypted private-key backup means a password reset may make older messages unrecoverable. A compromised deployment can serve modified JavaScript, so the server remains inside the trust boundary. Do not use this for highly sensitive communications until independently reviewed.
 
 Free hosting and database services have usage quotas and inactivity/retention limits. Verify provider limits before relying on them for permanent storage.
+
+## Native Android FCM notifications
+
+- Firebase project: `fbchat-native-push-20261014`; Android package: `com.codingbotlab.fbchat`. The public Android configuration is stored in `android/app/google-services.json`.
+- The Android wrapper requests notification permission, fetches its FCM token, registers it with the signed-in account, and displays a generic encrypted-message alert using the Android Messages notification channel. Tapping an alert opens the sender chat.
+- Run the additive FCM token-table SQL in `supabase/schema.sql` against the FB Chat Supabase project before using the new endpoints.
+- To enable sending from Render, set `FCM_PROJECT_ID=fbchat-native-push-20261014` and the server-only `FCM_SERVICE_ACCOUNT_JSON` environment variable to the JSON credential for a service account with the Firebase Cloud Messaging send role. Keep that private credential out of Git and frontend code.
+- `/health` reports `nativePushConfigured`. It remains false until the Render service has valid service-account credentials. Never treat a successful APK build as proof of end-to-end delivery; test on a device with Google Play services and notifications allowed.

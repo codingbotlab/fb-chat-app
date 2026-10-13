@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "571406848477",
+    "project_id": "fbchat-native-push-20261014",
+    "storage_bucket": "fbchat-native-push-20261014.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:571406848477:android:c52480f40d6a2eee45e634",
+        "android_client_info": {
+          "package_name": "com.codingbotlab.fbchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJf9qzhOL3O6nxX3tMlUn4mshEyaEHkaE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -5,6 +5,8 @@ const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
 const webpush = require('web-push');
+const { initializeApp, cert, getApps } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +34,27 @@ const authCache = new Map();
 const sentAt = new Map();
 const USERNAME_RE = /^[a-z0-9_.]{3,24}$/;
 const MAX_CIPHERTEXT_BYTES = 65_536;
+const FCM_PROJECT_ID = String(process.env.FCM_PROJECT_ID || '').trim();
+const FCM_SERVICE_ACCOUNT_JSON = String(process.env.FCM_SERVICE_ACCOUNT_JSON || '');
+let fcmMessaging = null;
+if (FCM_SERVICE_ACCOUNT_JSON) {
+  try {
+    const serviceAccount = JSON.parse(FCM_SERVICE_ACCOUNT_JSON);
+    const projectId = FCM_PROJECT_ID || serviceAccount.project_id;
+    if (!projectId || serviceAccount.project_id !== projectId) {
+      throw new Error('FCM service-account project ID mismatch');
+    }
+    const existingApp = getApps().find((item) => item.name === 'fb-chat-fcm');
+    const fcmApp = existingApp || initializeApp({
+      credential: cert(serviceAccount),
+      projectId
+    }, 'fb-chat-fcm');
+    fcmMessaging = getMessaging(fcmApp);
+  } catch {
+    // Native push stays disabled on bad/missing configuration; chat still starts.
+    fcmMessaging = null;
+  }
+}
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -59,6 +82,13 @@ function validPushSubscription(value) {
   } catch {
     return false;
   }
+}
+function validFcmToken(value) {
+  return typeof value === 'string' &&
+    value.length >= 20 && value.length <= 4096 &&
+    value.trim() === value &&
+    !value.includes(' ') && !value.includes('\n') &&
+    !value.includes('\r') && !value.includes('\t');
 }
 function normalize(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -173,6 +203,41 @@ async function sendPushToUser(userId, payload) {
   }));
 }
 
+async function sendNativePushToUser(userId, payload) {
+  if (!fcmMessaging || !configured || !validUuid(userId)) return;
+  try {
+    const rows = await db('fcm_tokens',
+      'select=id,token&user_id=eq.' + encodeURIComponent(userId) + '&limit=100');
+    if (!rows?.length) return;
+    const tokens = rows.map((row) => row.token).filter(validFcmToken);
+    if (!tokens.length) return;
+    const response = await fcmMessaging.sendEachForMulticast({
+      tokens,
+      data: {
+        title: String(payload.title || 'New message').slice(0, 80),
+        body: 'You have a new encrypted message',
+        username: validUsername(payload.username) ? normalize(payload.username) : '',
+        url: '/'
+      },
+      android: { priority: 'high', ttl: 60 * 1000 }
+    });
+    const removals = [];
+    response.responses.forEach((item, index) => {
+      const code = item.error?.code || '';
+      if (code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-registration-token') {
+        const row = rows.find((entry) => entry.token === tokens[index]);
+        if (row) removals.push(db('fcm_tokens', 'id=eq.' + encodeURIComponent(row.id), {
+          method: 'DELETE', prefer: 'return=minimal'
+        }).catch(() => {}));
+      }
+    });
+    await Promise.all(removals);
+  } catch {
+    // Push delivery is best effort and must never fail message persistence.
+  }
+}
+
 async function getProfileById(id) {
   if (!validUuid(id)) return null;
   const rows = await db('profiles',
@@ -228,7 +293,8 @@ async function requireAuth(req, res, next) {
 
 app.get('/health', (_req, res) => res.json({
   ok: true, service: 'fb-chat-app', authConfigured: configured,
-  connectedUsers: online.size, uptimeSeconds: Math.round(process.uptime())
+  connectedUsers: online.size, uptimeSeconds: Math.round(process.uptime()),
+  nativePushConfigured: Boolean(fcmMessaging)
 }));
 app.get('/api/push/public-key', (_req, res) => res.json({
   enabled: pushConfigured && configured,
@@ -275,6 +341,40 @@ app.delete('/api/push/subscribe', requireAuth, async (req, res, next) => {
     if (parsed.protocol !== 'https:') return res.status(400).json({ error: 'INVALID_ENDPOINT', message: 'The push endpoint must use HTTPS.' });
     await db('push_subscriptions',
       'user_id=eq.' + encodeURIComponent(req.authUser.id) + '&endpoint=eq.' + encodeURIComponent(parsed.toString()),
+      { method: 'DELETE', prefer: 'return=minimal' });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/fcm/register', requireAuth, async (req, res, next) => {
+  try {
+    const token = req.body?.token;
+    if (!validFcmToken(token)) return res.status(400).json({
+      error: 'INVALID_FCM_TOKEN', message: 'The Android push token is invalid.'
+    });
+    await db('fcm_tokens', 'on_conflict=token', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=minimal',
+      body: [{
+        user_id: req.authUser.id,
+        token,
+        platform: 'android',
+        device_name: String(req.body?.device_name || 'Android device').slice(0, 80),
+        user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
+        updated_at: new Date().toISOString()
+      }]
+    });
+    res.json({ ok: true, configured: Boolean(fcmMessaging) });
+  } catch (error) { next(error); }
+});
+app.delete('/api/fcm/register', requireAuth, async (req, res, next) => {
+  try {
+    const token = req.body?.token;
+    if (!validFcmToken(token)) return res.status(400).json({
+      error: 'INVALID_FCM_TOKEN', message: 'The Android push token is invalid.'
+    });
+    await db('fcm_tokens',
+      'user_id=eq.' + encodeURIComponent(req.authUser.id) + '&token=eq.' + encodeURIComponent(token),
       { method: 'DELETE', prefer: 'return=minimal' });
     res.json({ ok: true });
   } catch (error) { next(error); }
@@ -453,6 +553,10 @@ io.on('connection', (socket) => {
 
       const peerSocket = online.get(peer.id);
       // Push payload deliberately excludes message text; messages remain encrypted.
+      void sendNativePushToUser(peer.id, {
+        title: user.display_name || user.username || 'New message',
+        username: user.username
+      });
       void sendPushToUser(peer.id, {
         title: user.display_name || user.username || 'New message',
         body: 'You have a new encrypted message',
@@ -513,4 +617,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, authUserFromToken };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken };

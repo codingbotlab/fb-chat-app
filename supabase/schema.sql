@@ -60,3 +60,22 @@ create index if not exists push_subscriptions_user_id
 alter table public.push_subscriptions enable row level security;
 revoke all on table public.push_subscriptions from anon, authenticated;
 grant all on table public.push_subscriptions to service_role;
+
+-- Native Android Firebase Cloud Messaging device tokens.
+-- FCM registration tokens are not message content, but should still be treated as private.
+create table if not exists public.fcm_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  token text not null unique check (char_length(token) between 20 and 4096),
+  platform text not null default 'android' check (platform = 'android'),
+  device_name text not null default 'Android device',
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists fcm_tokens_user_id
+  on public.fcm_tokens(user_id);
+alter table public.fcm_tokens enable row level security;
+revoke all on table public.fcm_tokens from anon, authenticated;
+grant all on table public.fcm_tokens to service_role;

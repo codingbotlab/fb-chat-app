@@ -27,6 +27,13 @@ WhatsApp-inspired real-time one-to-one chat prototype. This branch introduces ac
 
 Never put the service-role key in frontend code, Git, or public issues. \`GET /api/config\` returns only the public anon key and configured state.
 
+## Android install and automatic web updates
+
+- The site can be installed on Android as a standalone Progressive Web App (PWA): open `https://chat.fashionbazz.in` in Chrome and choose **Install app** (or Chrome menu → **Add to Home screen**).
+- `public/sw.js` uses network-first requests for the app shell, so new website assets are fetched when online. The worker checks for updates when the app opens or becomes visible and activates new versions automatically.
+- Auth/API responses and Socket.IO paths are not stored in Cache Storage. Offline mode is limited to the cached app shell; messaging itself needs connectivity.
+- This is an installable web app, not a self-updating native APK. Android does not silently replace a sideloaded APK; native package updates normally go through Google Play or a user-confirmed updater. The installed PWA's web content updates from the live site without reinstalling an APK.
+
 ## Features in this iteration
 
 - Supabase Auth sign up/sign in; server validates bearer tokens.

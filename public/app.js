@@ -617,7 +617,7 @@
         button.dataset.rail === 'status' ? 'Encrypted status sharing is not implemented yet.'
           : 'Group/community conversations and membership controls are not included in this version.',
         [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
-    });
+    }));
   }
   async function initialize() {
     bindUi(); $('#authOverlay').classList.add('show'); setAuthMode('login');

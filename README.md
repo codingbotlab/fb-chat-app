@@ -1,61 +1,43 @@
 # FB Chat
 
-A WhatsApp-inspired chat app starter with a dark, muted-green interface, conversation list, direct-message UI, online presence, typing state, and a small Node.js + Socket.IO server.
+WhatsApp-inspired real-time one-to-one chat prototype. This branch introduces account-backed sessions, encrypted direct-message storage, online presence, typing indicators, delivery/read metadata and a mobile-first interface.
 
-> **Status:** early development prototype. It is not a production messenger and is not end-to-end encrypted.
+## Stack
 
-## Features in this starter
+- Node.js + Express + Socket.IO
+- Supabase Auth and Postgres
+- Browser Web Crypto (ECDH P-256, HKDF-SHA-256 and AES-GCM)
+- IndexedDB for the browser's non-extractable private key
 
-- Responsive desktop/mobile messaging interface
-- Conversation list and quick search
-- All, unread, and group chat filters
-- Local display-name onboarding for testing
-- Direct-message delivery between concurrently connected clients
-- Basic online presence and typing indicator
-- In-memory message history, limited to 500 messages per direct conversation
-- Health endpoint at `/health`
-- Input length and basic display-name validation
+## Local development
 
-## Run locally
+1. Create a separate Supabase project for FB Chat. Do not reuse or modify unrelated projects.
+2. Run \`supabase/schema.sql\` in the project's SQL Editor.
+3. In Supabase Auth settings, configure email confirmation and allowed redirect URLs.
+4. Set server-only environment variables: \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, and \`SUPABASE_SERVICE_ROLE_KEY\`.
+5. Run \`npm ci\`, \`npm run check\`, \`npm test\`, then \`npm start\`.
 
-Requirements: Node.js 20 or newer and npm.
+## Free Render deployment
 
-```bash
-npm install
-npm start
-```
+- Connect this repository to a Node.js **Web Service** in Render.
+- Build command: \`npm ci\`; start command: \`npm start\`.
+- Add \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, and \`SUPABASE_SERVICE_ROLE_KEY\` in Render's Environment page. Keep the service-role key server-only; never commit it or put it in browser code.
+- After deploying, \`/health\` should report \`authConfigured: true\` and \`/api/config\` should report \`configured: true\`. A missing key intentionally leaves sign-up disabled.
+- Free web services may sleep when idle; cold starts may delay the first connection. Check provider usage and database backups before relying on the service.
 
-Open http://localhost:3000 in two browser sessions (for example, a regular window and an incognito window). Pick different display names. Start a chat using the other session's exact display name and send messages.
+Never put the service-role key in frontend code, Git, or public issues. \`GET /api/config\` returns only the public anon key and configured state.
 
-For auto-restart during development:
+## Features in this iteration
 
-```bash
-npm run dev
-```
+- Supabase Auth sign up/sign in; server validates bearer tokens.
+- Username lookup and private direct chat backed by Postgres.
+- Messages are encrypted in the browser before transmission; the database stores ciphertext and IV.
+- Online presence, typing signals, delivery/read metadata and chat history.
+- Dark, responsive, WhatsApp-inspired chat layout with search and unread/online filters.
+- First-seen peer key pinning and warning when a pinned public key changes.
 
-## Checks
+## Important security and feature limits
 
-```bash
-npm run check
-npm test
-```
+This is a prototype, not a production-certified WhatsApp replacement. The custom encryption protocol has not received an independent cryptographic audit. There is no multi-device synchronization, contact discovery, groups, media/voice/video calls, push notifications, polished account recovery, blocking/reporting, moderation, or key backup/restore workflow. First-contact key pinning does not independently verify a contact's identity; compare fingerprints out-of-band for sensitive conversations. The password-derived encrypted private-key backup means a password reset may make older messages unrecoverable. A compromised deployment can serve modified JavaScript, so the server remains inside the trust boundary. Do not use this for highly sensitive communications until independently reviewed.
 
-## Limitations before public deployment
-
-This starter is for development only. It currently has **no real login, durable database, encrypted-at-rest storage, end-to-end encryption, file/media transfer, push notifications, voice/video calling, block/report tools, rate limiting, spam defenses, or moderation workflows**. Direct messages are stored only in server memory and are lost when the server restarts. The server currently uses display names as identities; this is not secure authentication.
-
-Before opening this to the public:
-1. Add real account authentication, secure sessions, email/phone verification and account recovery.
-2. Add a durable database and private-message access controls.
-3. Add per-user and per-IP rate limits, anti-spam protection, and abuse handling.
-4. Design and implement real end-to-end encryption if that is a product requirement; do not advertise this starter as encrypted.
-5. Add media storage/scanning, reporting/blocking, backups, monitoring and privacy/data deletion workflows.
-6. Use HTTPS, a reverse proxy and a persistent hosting environment capable of WebSockets.
-
-## Deployment
-
-This is a Node.js + Socket.IO app; static-only hosting is not sufficient for real-time delivery. Verify the destination hosting plan supports a persistent Node process and WebSockets before deploying.
-
-## Project isolation
-
-This repo is separate from NEXUS and FB Social. Do not put NEXUS source code, access tokens, local `.env` files or other secrets in this repository.
+Free hosting and database services have usage quotas and inactivity/retention limits. Verify provider limits before relying on them for permanent storage.

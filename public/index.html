@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101815">
+  <meta name="description" content="FB Chat — a clean, real-time messaging app starter.">
+  <title>FB Chat</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="rail">
+      <div class="logo" title="FB Chat">f.</div>
+      <button class="railbtn active" title="Chats" data-rail="chats">▣</button>
+      <button class="railbtn" title="Status" data-rail="status">◉</button>
+      <button class="railbtn" title="Communities" data-rail="communities">♧</button>
+      <button class="railbtn" title="Calls" data-rail="calls">⌕</button>
+      <div class="railbottom">
+        <button class="railbtn" id="profileButton" title="Your profile">●</button>
+        <button class="railbtn" id="settingsButton" title="Settings">⚙</button>
+      </div>
+    </aside>
+
+    <section class="inbox">
+      <div class="inboxhead">
+        <div><h1>Chats</h1><div class="subtle" id="inboxSub">Your conversations, at a glance.</div></div>
+        <button id="newChat" class="roundbtn" title="New chat">＋</button>
+      </div>
+      <div class="searchwrap"><span class="magnify">⌕</span><input id="chatSearch" class="search" placeholder="Search or start a new chat"></div>
+      <div class="filterrow">
+        <button class="filter active" data-filter="all">All</button>
+        <button class="filter" data-filter="unread">Unread</button>
+        <button class="filter" data-filter="groups">Groups</button>
+      </div>
+      <div class="chatlist" id="chatList">
+        <button class="chatitem active" data-peer="Aarav"><div class="chatavatar">A<span class="online-dot"></span></div><div class="chatbody"><div class="chatrow"><strong>Aarav Sharma</strong><time>10:42 PM</time></div><div class="lastmsg">That sounds great! Let's do it.</div></div></button>
+        <button class="chatitem" data-peer="Sana"><div class="chatavatar a2">S</div><div class="chatbody"><div class="chatrow"><strong>Sana Khan</strong><time>9:58 PM</time></div><div class="lastmsg">Sent you a photo</div></div></button>
+        <button class="chatitem" data-peer="Rohan"><div class="chatavatar a3">R<span class="online-dot"></span></div><div class="chatbody"><div class="chatrow"><strong>Rohan Verma</strong><time>8:26 PM</time></div><div class="lastmsg">Voice message · 0:18</div></div></button>
+        <button class="chatitem" data-peer="Creators Club" data-group="true"><div class="chatavatar a4">✦</div><div class="chatbody"><div class="chatrow"><strong>Creators Club</strong><time>7:13 PM</time></div><div class="lastmsg">Neha: Shared the new draft.</div></div></button>
+        <button class="chatitem" data-peer="Neha"><div class="chatavatar a5">N</div><div class="chatbody"><div class="chatrow"><strong>Neha Verma</strong><time>Yesterday</time></div><div class="lastmsg">Thank you 😊</div></div></button>
+        <button class="chatitem" data-peer="Family" data-group="true"><div class="chatavatar">♡</div><div class="chatbody"><div class="chatrow"><strong>Family</strong><time>Yesterday</time></div><div class="lastmsg">Maa: Call me when free.</div></div></button>
+      </div>
+      <div class="inboxfoot">Live delivery requires the chat server and recipient to be connected.</div>
+    </section>
+
+    <main class="conversation" id="conversation">
+      <header class="convhead" id="convHead" hidden>
+        <button class="roundbtn backbtn" id="backToChats" title="Back to chats">‹</button>
+        <div class="person"><div class="chatavatar" id="activeAvatar">A</div><div class="personlabel"><div class="personname" id="activeName">Aarav Sharma</div><div class="personstatus" id="activeStatus">Choose a name to connect</div></div></div>
+        <div class="headactions">
+          <button id="videoCall" title="Video call">▣</button><button id="voiceCall" title="Voice call">⌕</button><button id="searchInChat" title="Search conversation">⌕</button><button id="chatDetails" title="Conversation details">⋮</button>
+        </div>
+      </header>
+      <section class="welcome" id="welcome">
+        <div class="welcome-inner">
+          <div class="welcome-logo">f.</div>
+          <h2>Good conversations start here.</h2>
+          <p>A calmer space to message the people who matter. Pick a chat to continue, or start a new conversation.</p>
+          <div class="featurepills"><span>Private chats</span><span>Groups</span><span>Online presence</span></div>
+        </div>
+      </section>
+      <div class="messages" id="messages" hidden><div class="daydivider">TODAY</div></div>
+      <div class="composerwrap" id="composerWrap" hidden>
+        <div class="replybar" id="replyBar"><span id="replyText">Replying to message</span><button id="cancelReply">✕</button></div>
+        <form class="compose" id="composeForm">
+          <div class="compose-tools"><button type="button" id="emojiBtn" title="Emoji">☺</button><button type="button" id="attachBtn" title="Attach file">＋</button></div>
+          <div class="messagebox"><textarea id="messageInput" rows="1" placeholder="Type a message" autocomplete="off"></textarea><button type="button" id="micBtn" title="Voice message">♩</button></div>
+          <button class="sendbtn" id="sendBtn" type="submit" title="Send message">➤</button>
+        </form>
+        <div class="hint">Enter to send · Shift + Enter for a new line</div>
+      </div>
+    </main>
+  </div>
+
+  <div class="profilemodal" id="nameModal"><div class="modalcard"><h2>Welcome to FB Chat</h2><p>Choose the display name other people will see when they connect to this server.</p><form id="nameForm"><label for="displayName">Your name</label><input id="displayName" placeholder="e.g. Mayank" maxlength="24" autocomplete="name" required><button class="primary" type="submit">Continue to chats</button></form></div></div>
+  <div class="profilemodal" id="genericModal"><div class="modalcard"><h2 id="genericTitle">New chat</h2><p id="genericDescription">Enter a person's display name to start a conversation.</p><form id="genericForm"><label id="genericLabel" for="genericInput">Display name</label><input id="genericInput" maxlength="40" required><button class="primary" type="submit" id="genericSubmit">Start conversation</button></form><button id="genericCancel" class="modalcancel">Cancel</button></div></div>
+  <div class="toast" id="toast"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

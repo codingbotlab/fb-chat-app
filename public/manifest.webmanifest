@@ -1,0 +1,9 @@
+{
+  "name": "FB Chat",
+  "short_name": "FB Chat",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101815",
+  "theme_color": "#101815",
+  "description": "A clean, real-time messaging app starter."
+}

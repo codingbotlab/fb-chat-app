@@ -49,7 +49,8 @@ function validEncryptedMessage(value) {
   return Boolean(value && typeof value.ciphertext === 'string' &&
     value.ciphertext.length > 0 &&
     Buffer.byteLength(value.ciphertext, 'utf8') <= MAX_CIPHERTEXT_BYTES &&
-    typeof value.iv === 'string' && /^[A-Za-z0-9_-]{16}$/.test(value.iv));
+    typeof value.iv === 'string' && /^[A-Za-z0-9_-]{16}$/.test(value.iv) &&
+    !Object.hasOwn(value, 'text'));
 }
 function validUuid(value) {
   return typeof value === 'string' &&

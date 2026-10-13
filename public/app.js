@@ -175,7 +175,7 @@
     });
   }
   async function fingerprint(jwk) {
-    return to64(await crypto.subtle.digest('SHA-256', te.encode([jwk.kty, jwk.crv, jwk.x, jwk.y].join('.')));
+    return to64(await crypto.subtle.digest('SHA-256', te.encode([jwk.kty, jwk.crv, jwk.x, jwk.y].join('.'))));
   }
   function prettyFingerprint(value) {
     return String(value || '').replace(/[-_]/g, '').toUpperCase().match(/.{1,4}/g)?.join(' ') || '';

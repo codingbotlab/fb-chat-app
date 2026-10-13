@@ -31,6 +31,8 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .connection-dot.online{background:var(--green-bright);box-shadow:0 0 0 3px #25d36618}
 .iconbtn{width:39px;height:39px;border-radius:50%;display:grid;place-items:center;color:#a8bac1;flex-shrink:0}
 .iconbtn:hover{background:var(--panel-raised);color:var(--text)}
+.inbox-actions{display:flex;align-items:center;gap:4px}
+.mobile-settings{display:none}
 .newchat{background:var(--panel-soft);color:#d9e4e8}
 .newchat svg{width:20px;height:20px}
 .searchwrap{position:relative;display:flex;align-items:center;padding:0 14px 13px}
@@ -91,6 +93,24 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .primary:hover{background:#009879}
 .welcome-action{max-width:200px}
 .messages{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;gap:7px;padding:20px clamp(14px,4vw,70px) 25px;scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:#31434b transparent}
+.message-date{align-self:center;margin:6px 0;padding:6px 12px;border:1px solid #304148;border-radius:8px;background:#1a2d34eF;color:#c0d1d5;font-size:10px;box-shadow:0 1px 4px #0002}
+.bubble{position:relative;padding-right:32px}
+.bubble-text{white-space:pre-wrap}
+.message-more{position:absolute;right:3px;top:4px;width:22px;height:23px;border-radius:5px;opacity:0;color:#9db0b7;font-size:18px;line-height:1}
+.bubble:hover .message-more,.message-more:focus-visible{opacity:1}
+.message-more:hover{background:#3c515a;color:#fff}
+.reply-quote{display:flex;flex-direction:column;gap:2px;padding:5px 8px;margin:0 0 6px;border-left:3px solid #45c7a2;border-radius:3px;background:#0e2928;color:#b9d5d1;font-size:10px;max-width:100%}
+.reply-quote strong{color:#65d8b3;font-size:10px}
+.reply-quote span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.star-mark{color:#f4d06f;font-size:10px}
+.replybar{display:flex;align-items:center;gap:10px;margin:0 0 7px;padding:8px 11px;border:1px solid #2d574e;border-left:3px solid #00a884;border-radius:8px;background:#172b2d;color:#b6d2cd;font-size:11px}
+.replybar span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.replybar button{width:27px;height:27px;border-radius:50%;font-size:21px;color:#9eb8b9}
+.replybar button:hover{background:#2a4145}
+.emoji-picker{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px 43px;padding:9px;border:1px solid #2b4148;border-radius:12px;background:#1a2a31;box-shadow:0 8px 28px #0004;max-width:min(360px,calc(100vw - 30px))}
+.emoji-choice{display:grid;place-items:center;width:34px;height:34px;border-radius:8px;font-size:20px}
+.emoji-choice:hover{background:#30464e}
+
 .daydivider{align-self:center;margin:2px 0 12px;padding:7px 10px;border:1px solid #294048;border-radius:8px;background:#1a2d34;color:#b8d1d8;font-size:9px;font-weight:650;letter-spacing:.35px}
 .systemnote{align-self:center;max-width:90%;margin:2px 0 12px;padding:9px 12px;border:1px solid #2a4447;border-radius:9px;background:#1b3034;color:#bdd7d9;text-align:center;font-size:10px;line-height:1.7}
 .systemnote.warning{border-color:#9b633d;background:#3b2820;color:#ffd7b9}
@@ -160,6 +180,8 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   .app.chat-open .inbox{display:none}
   .app.chat-open .conversation{display:flex}
   .inboxhead{padding:20px 16px 14px}
+  .mobile-settings{display:grid;background:#202c33;color:#bbccd1}
+  .inbox-actions{gap:6px}
   .inbox-title h1{font-size:22px}
   .chatlist{padding-inline:7px}
   .chatitem{padding:12px 10px}

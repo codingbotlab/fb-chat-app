@@ -14,14 +14,14 @@ WhatsApp-inspired real-time one-to-one chat prototype. This branch introduces ac
 1. Create a separate Supabase project for FB Chat. Do not reuse or modify unrelated projects.
 2. Run \`supabase/schema.sql\` in the project's SQL Editor.
 3. In Supabase Auth settings, configure email confirmation and allowed redirect URLs.
-4. Set server-only environment variables: \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, and \`SUPABASE_SERVICE_ROLE_KEY\`.
+4. Set server-only environment variables: \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, \`SUPABASE_SERVICE_ROLE_KEY\`, \`VAPID_PUBLIC_KEY\`, \`VAPID_PRIVATE_KEY\`, and \`VAPID_SUBJECT\`. Keep the service-role key and VAPID private key server-only; never commit them or put them in browser code.
 5. Run \`npm ci\`, \`npm run check\`, \`npm test\`, then \`npm start\`.
 
 ## Free Render deployment
 
 - Connect this repository to a Node.js **Web Service** in Render.
 - Build command: \`npm ci\`; start command: \`npm start\`.
-- Add \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, and \`SUPABASE_SERVICE_ROLE_KEY\` in Render's Environment page. Keep the service-role key server-only; never commit it or put it in browser code.
+- Add \`SUPABASE_URL\`, \`SUPABASE_ANON_KEY\`, \`SUPABASE_SERVICE_ROLE_KEY\`, \`VAPID_PUBLIC_KEY\`, \`VAPID_PRIVATE_KEY\`, and \`VAPID_SUBJECT\` in Render's Environment page. Keep the service-role key and VAPID private key server-only; never commit them or put them in browser code.
 - After deploying, \`/health\` should report \`authConfigured: true\` and \`/api/config\` should report \`configured: true\`. A missing key intentionally leaves sign-up disabled.
 - Free web services may sleep when idle; cold starts may delay the first connection. Check provider usage and database backups before relying on the service.
 
@@ -42,9 +42,11 @@ Never put the service-role key in frontend code, Git, or public issues. \`GET /a
 - Online presence, typing signals, delivery/read metadata and chat history.
 - Dark, responsive, WhatsApp-inspired chat layout with search and unread/online filters.
 - First-seen peer key pinning and warning when a pinned public key changes.
+- WhatsApp-inspired date dividers, reply previews, emoji picker, message copy/star/hide actions, foreground message sound, and read/delivery ticks.
+- Web Push for the installable Chrome PWA once permission is granted and server VAPID keys are set; payloads include no decrypted message text. Background Android notifications use the device's notification sound/vibration settings.
 
 ## Important security and feature limits
 
-This is a prototype, not a production-certified WhatsApp replacement. The custom encryption protocol has not received an independent cryptographic audit. There is no multi-device synchronization, contact discovery, groups, media/voice/video calls, push notifications, polished account recovery, blocking/reporting, moderation, or key backup/restore workflow. First-contact key pinning does not independently verify a contact's identity; compare fingerprints out-of-band for sensitive conversations. The password-derived encrypted private-key backup means a password reset may make older messages unrecoverable. A compromised deployment can serve modified JavaScript, so the server remains inside the trust boundary. Do not use this for highly sensitive communications until independently reviewed.
+This is a prototype, not a production-certified WhatsApp replacement. The custom encryption protocol has not received an independent cryptographic audit. There is no multi-device synchronization, contact discovery, groups, media/voice/video calls, polished account recovery, blocking/reporting, moderation, or key backup/restore workflow. Web Push works on the installed Chrome PWA after permission and VAPID configuration; background push in the standalone WebView APK still needs Firebase Cloud Messaging integration. First-contact key pinning does not independently verify a contact's identity; compare fingerprints out-of-band for sensitive conversations. The password-derived encrypted private-key backup means a password reset may make older messages unrecoverable. A compromised deployment can serve modified JavaScript, so the server remains inside the trust boundary. Do not use this for highly sensitive communications until independently reviewed.
 
 Free hosting and database services have usage quotas and inactivity/retention limits. Verify provider limits before relying on them for permanent storage.

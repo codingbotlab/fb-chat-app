@@ -41,3 +41,22 @@ revoke all on table public.profiles from anon, authenticated;
 revoke all on table public.chat_messages from anon, authenticated;
 grant all on table public.profiles to service_role;
 grant all on table public.chat_messages to service_role;
+
+
+-- Web Push subscriptions. Push payloads must never contain decrypted message text.
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null unique check (endpoint like 'https://%'),
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists push_subscriptions_user_id
+  on public.push_subscriptions(user_id);
+alter table public.push_subscriptions enable row level security;
+revoke all on table public.push_subscriptions from anon, authenticated;
+grant all on table public.push_subscriptions to service_role;

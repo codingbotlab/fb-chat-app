@@ -4,6 +4,7 @@ const path = require('node:path');
 const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
+const webpush = require('web-push');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +14,18 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || '');
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
 const configured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
+const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || '');
+const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || '');
+const VAPID_SUBJECT = String(process.env.VAPID_SUBJECT || 'mailto:admin@fashionbazz.in');
+let pushConfigured = false;
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    pushConfigured = true;
+  } catch {
+    pushConfigured = false;
+  }
+}
 const online = new Map();
 const socketUsers = new Map();
 const authCache = new Map();
@@ -35,6 +48,18 @@ app.use((req, res, next) => {
   next();
 });
 
+function validPushSubscription(value) {
+  try {
+    const endpoint = new URL(String(value?.endpoint || ''));
+    return endpoint.protocol === 'https:' &&
+      typeof value?.keys?.p256dh === 'string' && value.keys.p256dh.length >= 20 &&
+      value.keys.p256dh.length <= 256 &&
+      typeof value?.keys?.auth === 'string' && value.keys.auth.length >= 8 &&
+      value.keys.auth.length <= 128;
+  } catch {
+    return false;
+  }
+}
 function normalize(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -124,6 +149,30 @@ async function db(table, query = '', options = {}) {
   }
   return data;
 }
+async function sendPushToUser(userId, payload) {
+  if (!pushConfigured || !configured || !validUuid(userId)) return;
+  let rows;
+  try {
+    rows = await db('push_subscriptions',
+      'select=id,endpoint,p256dh,auth&user_id=eq.' + encodeURIComponent(userId) + '&limit=20');
+  } catch {
+    return;
+  }
+  await Promise.all((rows || []).map(async (row) => {
+    const subscription = { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } };
+    try {
+      await webpush.sendNotification(subscription, JSON.stringify(payload), { TTL: 120, urgency: 'high' });
+    } catch (error) {
+      const status = error && Number(error.statusCode);
+      if (status === 404 || status === 410) {
+        db('push_subscriptions', 'id=eq.' + encodeURIComponent(row.id), {
+          method: 'DELETE', prefer: 'return=minimal'
+        }).catch(() => {});
+      }
+    }
+  }));
+}
+
 async function getProfileById(id) {
   if (!validUuid(id)) return null;
   const rows = await db('profiles',
@@ -181,12 +230,55 @@ app.get('/health', (_req, res) => res.json({
   ok: true, service: 'fb-chat-app', authConfigured: configured,
   connectedUsers: online.size, uptimeSeconds: Math.round(process.uptime())
 }));
+app.get('/api/push/public-key', (_req, res) => res.json({
+  enabled: pushConfigured && configured,
+  publicKey: pushConfigured && configured ? VAPID_PUBLIC_KEY : null
+}));
 app.get('/api/config', (_req, res) => res.json({
   configured,
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
 app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: 0, index: 'index.html' }));
+
+app.post('/api/push/subscribe', requireAuth, async (req, res, next) => {
+  try {
+    if (!pushConfigured) return res.status(503).json({
+      error: 'PUSH_NOT_CONFIGURED',
+      message: 'Push notifications are not configured on the server yet.'
+    });
+    const subscription = req.body?.subscription;
+    if (!validPushSubscription(subscription)) return res.status(400).json({
+      error: 'INVALID_SUBSCRIPTION', message: 'The browser push subscription is invalid.'
+    });
+    const endpoint = new URL(subscription.endpoint).toString();
+    await db('push_subscriptions', 'on_conflict=endpoint', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=minimal',
+      body: [{
+        user_id: req.authUser.id,
+        endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
+        updated_at: new Date().toISOString()
+      }]
+    });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.delete('/api/push/subscribe', requireAuth, async (req, res, next) => {
+  try {
+    const endpoint = String(req.body?.endpoint || '');
+    let parsed;
+    try { parsed = new URL(endpoint); } catch { return res.status(400).json({ error: 'INVALID_ENDPOINT', message: 'The push endpoint is invalid.' }); }
+    if (parsed.protocol !== 'https:') return res.status(400).json({ error: 'INVALID_ENDPOINT', message: 'The push endpoint must use HTTPS.' });
+    await db('push_subscriptions',
+      'user_id=eq.' + encodeURIComponent(req.authUser.id) + '&endpoint=eq.' + encodeURIComponent(parsed.toString()),
+      { method: 'DELETE', prefer: 'return=minimal' });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
 
 app.get('/api/me', requireAuth, (req, res) => res.json({
   user: { id: req.authUser.id, email: req.authUser.email || null },
@@ -358,7 +450,18 @@ io.on('connection', (socket) => {
         ciphertext: saved.ciphertext, iv: saved.iv, created_at: saved.created_at,
         delivered_at: null, read_at: null
       };
+
       const peerSocket = online.get(peer.id);
+      // Push payload deliberately excludes message text; messages remain encrypted.
+      void sendPushToUser(peer.id, {
+        title: user.display_name || user.username || 'New message',
+        body: 'You have a new encrypted message',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: 'fb-chat-' + user.id,
+        username: user.username,
+        url: '/'
+      });
       if (peerSocket) {
         io.to(peerSocket).emit('chat:message', message);
         const update = await db('chat_messages', 'id=eq.' + saved.id, {
@@ -410,4 +513,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, authUserFromToken };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, authUserFromToken };

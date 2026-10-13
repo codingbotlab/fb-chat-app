@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription } = require('../server');
 
 test('normalization trims whitespace and case-folds usernames', () => {
   assert.equal(normalize('  Mayank   Kumar '), 'mayank kumar');
@@ -52,6 +52,11 @@ test('health and config endpoints do not expose service-role credentials', async
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
   assert.equal(typeof config.configured, 'boolean');
+  const pushResponse = await fetch(base + '/api/push/public-key');
+  assert.equal(pushResponse.status, 200);
+  const push = await pushResponse.json();
+  assert.equal(typeof push.enabled, 'boolean');
+  assert.equal(push.enabled, false);
   assert.equal(Object.hasOwn(config, 'supabaseServiceRoleKey'), false);
   assert.equal(Object.hasOwn(config, 'serviceRoleKey'), false);
 });
@@ -75,7 +80,7 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
   for (const id of [
-    'app', 'chatList', 'chatSearch', 'newChat', 'emptyNewChat', 'welcomeNewChat',
+    'app', 'chatList', 'chatSearch', 'newChat', 'mobileSettingsButton', 'emptyNewChat', 'welcomeNewChat',
     'authOverlay', 'authForm', 'loginTab', 'signupTab', 'displayName', 'username',
     'email', 'password', 'chatDetails', 'messages', 'composeForm', 'messageInput',
     'sendBtn', 'genericModal', 'genericForm', 'genericInput', 'connectionDot'
@@ -122,4 +127,42 @@ test('PWA auto-update keeps API and Socket.IO responses out of Cache Storage', (
   assert.match(sw, /await fetch\(request, \{ cache: 'no-store' \}\)/);
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /url\.pathname\.startsWith\('\/socket\.io\/'\)/);
+});
+
+
+test('push subscription validation only accepts HTTPS endpoints and bounded key fields', () => {
+  assert.equal(validPushSubscription({
+    endpoint: 'https://push.example.test/subscription/abc',
+    keys: { p256dh: 'p'.repeat(65), auth: 'a'.repeat(22) }
+  }), true);
+  assert.equal(validPushSubscription({
+    endpoint: 'http://push.example.test/subscription/abc',
+    keys: { p256dh: 'p'.repeat(65), auth: 'a'.repeat(22) }
+  }), false);
+  assert.equal(validPushSubscription({
+    endpoint: 'https://push.example.test/subscription/abc',
+    keys: { p256dh: 'short', auth: 'short' }
+  }), false);
+  assert.equal(validPushSubscription(null), false);
+});
+
+test('WhatsApp-style actions, sound settings and notification enrollment are present', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..', 'public');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.match(html, /id="emojiPicker"/);
+  assert.match(html, /id="replyBar"/);
+  assert.match(js, /function messageActionsDialog/);
+  assert.match(js, /Star message/);
+  assert.match(js, /Copy message/);
+  assert.match(js, /function playMessageSound/);
+  assert.match(js, /Notification\.requestPermission/);
+  assert.match(js, /pushManager\.subscribe/);
+  assert.match(sw, /self\.addEventListener\('push'/);
+  assert.match(sw, /showNotification/);
+  assert.match(sw, /notificationclick/);
+  assert.match(sw, /fb-chat-shell-v4/);
 });

@@ -1394,15 +1394,15 @@
       image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not open that image.')); };
       image.src = url;
     });
-    const side = 512, canvas = document.createElement('canvas');
+    const side = 320, canvas = document.createElement('canvas');
     canvas.width = side; canvas.height = side;
     const context = canvas.getContext('2d', { alpha: false });
     const crop = Math.min(source.naturalWidth, source.naturalHeight);
     const sx = (source.naturalWidth - crop) / 2, sy = (source.naturalHeight - crop) / 2;
     context.drawImage(source, sx, sy, crop, crop, 0, 0, side, side);
-    for (const quality of [0.82, 0.68, 0.54, 0.42]) {
+    for (const quality of [0.76, 0.62, 0.50, 0.38, 0.28]) {
       const value = canvas.toDataURL('image/jpeg', quality);
-      if (value.length <= 88_000) return value;
+      if (value.length <= 38_000) return value;
     }
     throw new Error('That photo is too detailed to compress. Try another image.');
   }

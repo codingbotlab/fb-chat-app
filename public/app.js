@@ -937,7 +937,7 @@
     $('#profileButton').addEventListener('click', profileDialog);
     $('#settingsButton').addEventListener('click', settingsDialog);
     $('#mobileSettingsButton').addEventListener('click', settingsDialog);
-    const bottomNavItems = $('[data-bottom-nav]');
+    const bottomNavItems = $$('[data-bottom-nav]');
     const showMainSection = (section) => {
       bottomNavItems.forEach((item) => {
         const active = item.dataset.bottomNav === section;

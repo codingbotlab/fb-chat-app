@@ -636,3 +636,5 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   .profile-setting-button{min-width:58px;padding:6px}
   .profile-setting-status{max-width:86px}
 }
+
+@media(max-width:720px){.mobile-bottom-nav{grid-template-columns:repeat(3,minmax(0,1fr))}}

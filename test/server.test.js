@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch } = require('../server');
 
 test('native FCM tokens are bounded and whitespace-free', () => {
   assert.equal(validFcmToken('f'.repeat(152)), true);
@@ -51,6 +51,31 @@ test('legacy oversized profile metadata is compacted before issuing chat tokens'
   assert.equal(Object.hasOwn(compact, 'avatar_url'), false);
   assert.equal(Object.hasOwn(compact, 'picture'), false);
   assert.ok(Buffer.byteLength(JSON.stringify(compact), 'utf8') < 1000);
+});
+
+test('oversized auth metadata cleanup explicitly nulls old SVG/Base64 values before refresh', () => {
+  const largeSvg = 'data:image/svg+xml;base64,' + 'A'.repeat(50_000);
+  const original = {
+    username: 'MADDY',
+    display_name: 'Maddy Hunk',
+    avatar_url: largeSvg,
+    picture: largeSvg,
+    provider_blob: 'x'.repeat(18_000)
+  };
+  const compact = compactUserMetadata(original);
+  const patch = metadataCleanupPatch(original, compact);
+  assert.equal(patch.avatar_url, null);
+  assert.equal(patch.picture, null);
+  assert.equal(patch.provider_blob, null);
+  assert.equal(patch.username, 'maddy');
+  assert.equal(patch.display_name, 'Maddy Hunk');
+  assert.ok(Buffer.byteLength(JSON.stringify(patch), 'utf8') < 1000);
+
+  const appMetadata = { provider: 'email', providers: ['email'], oversized_claim: 'z'.repeat(20_000) };
+  const appPatch = metadataCleanupPatch(appMetadata, compactAppMetadata(appMetadata));
+  assert.equal(appPatch.provider, 'email');
+  assert.deepEqual(appPatch.providers, ['email']);
+  assert.equal(appPatch.oversized_claim, null);
 });
 
 test('profile photo and about metadata are size-limited and safely exposed', () => {
@@ -156,11 +181,14 @@ test('normal user sign-in cleans old oversized auth metadata before the browser 
   assert.match(js, /fetch\('\/api\/auth\/login'/);
   assert.doesNotMatch(js, /authRequest\('token\?grant_type=password'/);
   assert.match(server, /app\.post\('\/api\/auth\/login'/);
-  assert.match(server, /metadataBytes > 3000 \|\| unsafeAvatar/);
-  assert.match(server, /updateAuthUserMetadata\(result\.user, compactMetadata, true\)/);
+  assert.match(server, /userMetadataBytes > 3000 \|\| appMetadataBytes > 3000 \|\| unsafeAvatar/);
+  assert.match(server, /updateAuthUserMetadata\(currentUser, compactMetadata, true, compactApps\)/);
+  assert.match(server, /metadataCleanupPatch\(existingUserMetadata, metadata\)/);
+  assert.match(server, /metadataCleanupPatch\(user\?\.app_metadata \|\| \{\}, appMetadata\)/);
   assert.match(server, /grant_type=refresh_token/);
-  assert.match(server, /access_token\)\.length > 12_000/);
+  assert.match(server, /String\(value\?\.access_token \|\| ''\)\.length > 12_000/);
   assert.match(server, /function compactUserMetadata\(/);
+  assert.match(server, /function compactAppMetadata\(/);
 });
 
 test('admin console is served at a separate page path and its APIs require authenticated admin access', async (t) => {

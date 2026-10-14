@@ -227,3 +227,25 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Native-app-style bottom navigation for phones and tablets. */
+.mobile-bottom-nav{display:none}
+@media(max-width:720px){
+  .app{padding-bottom:calc(66px + env(safe-area-inset-bottom))}
+  .mobile-bottom-nav{
+    position:fixed;z-index:30;left:0;right:0;bottom:0;
+    display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+    min-height:calc(64px + env(safe-area-inset-bottom));
+    padding:7px 8px calc(7px + env(safe-area-inset-bottom));
+    border-top:1px solid #263a42;
+    background:rgba(17,27,33,.97);
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  }
+  .bottom-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;border-radius:12px;color:#8da3ad;font-size:10px;font-weight:600;letter-spacing:.1px}
+  .bottom-nav-item .bi{font-size:20px;line-height:1}
+  .bottom-nav-item.active{color:#39d6ad}
+  .bottom-nav-item.active .bi{filter:drop-shadow(0 0 7px rgba(0,168,132,.25))}
+  .bottom-nav-item:active{background:#20343b}
+  .toast{bottom:calc(78px + env(safe-area-inset-bottom))}
+}

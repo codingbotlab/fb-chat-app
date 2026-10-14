@@ -920,6 +920,26 @@
     $('#profileButton').addEventListener('click', profileDialog);
     $('#settingsButton').addEventListener('click', settingsDialog);
     $('#mobileSettingsButton').addEventListener('click', settingsDialog);
+    const bottomNavItems = $('[data-bottom-nav]');
+    bottomNavItems.forEach((button) => button.addEventListener('click', () => {
+      bottomNavItems.forEach((item) => {
+        const active = item === button;
+        item.classList.toggle('active', active);
+        if (active) item.setAttribute('aria-current', 'page');
+        else item.removeAttribute('aria-current');
+      });
+      if (button.dataset.bottomNav === 'chats') {
+        $('#app').classList.remove('chat-open');
+        return;
+      }
+      infoModal(button.dataset.bottomNav === 'status' ? 'Status updates' : 'Communities',
+        button.dataset.bottomNav === 'status' ? 'Encrypted status sharing is not implemented yet.'
+          : 'Community chats are not implemented yet.');
+    }));
+    $('#bottomSettingsButton').addEventListener('click', () => {
+      bottomNavItems.forEach((item) => { item.classList.remove('active'); item.removeAttribute('aria-current'); });
+      settingsDialog();
+    });
     $$('[data-rail]').forEach((button) => button.addEventListener('click', () => {
       $$('[data-rail]').forEach((item) => item.classList.toggle('active', item === button));
       if (button.dataset.rail === 'chats') return;

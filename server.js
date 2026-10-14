@@ -237,6 +237,18 @@ async function storeProfileAvatar(userId, dataUrl) {
   }
   return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.' + extension;
 }
+async function findStoredProfileAvatar(userId) {
+  if (!validUuid(userId) || !SUPABASE_URL) return null;
+  const extensions = ['jpg', 'png', 'webp'];
+  const checked = await Promise.all(extensions.map(async (extension) => {
+    const url = SUPABASE_URL + '/storage/v1/object/public/fbchat-profiles/' + userId + '.' + extension;
+    try {
+      const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
+      return response.ok ? { extension, url } : null;
+    } catch { return null; }
+  }));
+  return checked.find(Boolean)?.url || null;
+}
 function metadataCleanupPatch(existing = {}, compact = {}) {
   const patch = {};
   for (const key of Object.keys(existing || {})) patch[key] = null;
@@ -297,6 +309,23 @@ function compactUserMetadata(metadata = {}) {
   if (validBio(metadata.bio)) compact.bio = metadata.bio.trim();
   if (validStoredAvatarUrl(metadata.avatar_url)) compact.avatar_url = metadata.avatar_url;
   return compact;
+}
+async function ensureStoredAvatarMetadata(authUser) {
+  if (!authUser?.id || !validUuid(authUser.id)) return authUser?.user_metadata || {};
+  const metadata = authUser.user_metadata || {};
+  if (validStoredAvatarUrl(metadata.avatar_url)) return metadata;
+
+  // Older releases put a Base64 photo in auth metadata; newer releases store it
+  // in the public avatar bucket so it can safely be shown to other chat users.
+  let avatarUrl = await findStoredProfileAvatar(authUser.id);
+  if (!avatarUrl && validAvatarDataUrl(metadata.avatar_url)) {
+    avatarUrl = await storeProfileAvatar(authUser.id, metadata.avatar_url);
+  }
+  if (!avatarUrl) return metadata;
+
+  const compact = Object.assign(compactUserMetadata(metadata), { avatar_url: avatarUrl });
+  const saved = await updateAuthUserMetadata(authUser, compact, true);
+  return saved.user_metadata || compact;
 }
 function isRateLimitedUserLogin(req) {
   const key = String(req.ip || req.socket?.remoteAddress || 'unknown');
@@ -592,6 +621,19 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     let sessionResult = result;
+    let forceMetadataRefresh = false;
+    const initialMetadata = sessionResult.user.user_metadata || {};
+    const initialAvatar = initialMetadata.avatar_url;
+    if (!validStoredAvatarUrl(initialAvatar)) {
+      let recoveredAvatar = await findStoredProfileAvatar(sessionResult.user.id);
+      if (!recoveredAvatar && validAvatarDataUrl(initialAvatar)) {
+        recoveredAvatar = await storeProfileAvatar(sessionResult.user.id, initialAvatar);
+      }
+      if (recoveredAvatar) {
+        sessionResult.user.user_metadata = Object.assign({}, initialMetadata, { avatar_url: recoveredAvatar });
+        forceMetadataRefresh = true;
+      }
+    }
     function oversizedSession(value) {
       const user = value?.user || {};
       const userMetadata = user.user_metadata || {};
@@ -607,7 +649,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Some auth providers merge user_metadata rather than replacing it. Explicit
     // null patches are required to remove old data-URI/SVG/provider keys completely.
     // Retry once with fresh claims after cleaning both metadata namespaces.
-    for (let attempt = 0; attempt < 2 && oversizedSession(sessionResult); attempt += 1) {
+    for (let attempt = 0; attempt < 2 && (forceMetadataRefresh || oversizedSession(sessionResult)); attempt += 1) {
       const currentUser = sessionResult.user || result.user;
       const userMetadata = currentUser.user_metadata || {};
       const appMetadata = currentUser.app_metadata || {};
@@ -631,6 +673,7 @@ app.post('/api/auth/login', async (req, res) => {
         throw appError(503, 'SESSION_REFRESH_FAILED', 'Your saved profile data was cleaned. Please try signing in again.');
       }
       sessionResult = refreshed;
+      forceMetadataRefresh = false;
     }
 
     if (String(sessionResult.access_token || '').length > 12_000) {
@@ -974,7 +1017,8 @@ app.get('/api/users/:username', requireAuth, async (req, res, next) => {
     if (person.id === req.authUser.id) return res.status(400).json({ error: 'SELF_CHAT', message: 'Choose a different username.' });
     if (!person.public_key) return res.status(409).json({ error: 'KEY_NOT_READY', message: 'This user has not finished encryption setup.' });
     const authPerson = await getAuthUserById(person.id);
-    res.json({ profile: publicProfile(person, authPerson?.user_metadata || {}) });
+    const metadata = authPerson ? await ensureStoredAvatarMetadata(authPerson) : {};
+    res.json({ profile: publicProfile(person, metadata) });
   } catch (error) { next(error); }
 });
 app.get('/api/chats', requireAuth, async (req, res, next) => {
@@ -988,7 +1032,17 @@ app.get('/api/chats', requireAuth, async (req, res, next) => {
       'select=id,username,display_name,public_key,created_at&id=in.(' + ids.join(',') + ')') : [];
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
     const authUsers = ids.length ? await fetchAuthUsers(1, 1000) : [];
-    const metadataById = new Map(authUsers.filter((item) => ids.includes(item.id)).map((item) => [item.id, item.user_metadata || {}]));
+    const metadataById = new Map();
+    const relevantAuthUsers = authUsers.filter((item) => ids.includes(item.id));
+    await Promise.all(relevantAuthUsers.map(async (item) => {
+      try {
+        metadataById.set(item.id, await ensureStoredAvatarMetadata(item));
+      } catch (error) {
+        // A photo migration should not make the chat list unavailable.
+        console.warn('[PROFILE] Existing avatar migration deferred for a chat contact.');
+        metadataById.set(item.id, item.user_metadata || {});
+      }
+    }));
     const latest = new Map();
     for (const message of rows || []) {
       const peerId = message.sender_id === id ? message.recipient_id : message.sender_id;
@@ -1046,7 +1100,11 @@ io.use(async (socket, next) => {
     if (!user) return next(new Error('AUTH_REQUIRED'));
     const row = await getOrCreateProfile(user);
     if (!row.public_key) return next(new Error('ENCRYPTION_SETUP_REQUIRED'));
-    socket.data.user = { id: user.id, username: row.username, display_name: row.display_name };
+    const visible = safeProfileMetadata(user.user_metadata || {});
+    socket.data.user = {
+      id: user.id, username: row.username, display_name: row.display_name,
+      avatar_url: visible.avatar_url, bio: visible.bio
+    };
     next();
   } catch (error) { next(new Error(error.code || 'SERVER_NOT_READY')); }
 });
@@ -1069,6 +1127,11 @@ io.on('connection', (socket) => {
       if (!current) return;
       user.username = current.username;
       user.display_name = current.display_name;
+      const authUser = await getAuthUserById(user.id);
+      const metadata = authUser ? await ensureStoredAvatarMetadata(authUser) : {};
+      const visible = safeProfileMetadata(metadata);
+      user.avatar_url = visible.avatar_url;
+      user.bio = visible.bio;
       socket.data.user = user;
       socketUsers.set(socket.id, user);
       broadcastPresence();

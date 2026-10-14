@@ -32,6 +32,7 @@
   async function refreshSession() {
     if (!authSession?.refresh_token) throw new Error('Please sign in again.');
     const response = await fetch(config.supabaseUrl + '/auth/v1/token?grant_type=refresh_token', {
+      credentials:'omit',
       method:'POST',
       headers:{'Content-Type':'application/json',apikey:config.supabaseAnonKey},
       body:JSON.stringify({refresh_token:authSession.refresh_token})
@@ -46,6 +47,8 @@
       await refreshSession();
     }
     const response = await fetch(path, {
+      credentials:'omit',
+      cache:'no-store',
       method:options.method || 'GET',
       headers:Object.assign({'Content-Type':'application/json',Authorization:'Bearer '+authSession.access_token},options.headers||{}),
       body:options.body
@@ -81,6 +84,7 @@
     $('#loginSubmit').disabled = true; $('#loginSubmit').textContent = 'Signing in…'; loginError('');
     try {
       const response = await fetch(config.supabaseUrl + '/auth/v1/token?grant_type=password', {
+        credentials:'omit',
         method:'POST',
         headers:{'Content-Type':'application/json',apikey:config.supabaseAnonKey},
         body:JSON.stringify({email:$('#email').value.trim(),password:$('#password').value})
@@ -102,6 +106,7 @@
     try {
       if (authSession?.access_token && config?.supabaseUrl) {
         await fetch(config.supabaseUrl + '/auth/v1/logout', {
+          credentials:'omit',
           method:'POST',headers:{apikey:config.supabaseAnonKey,Authorization:'Bearer '+authSession.access_token}
         });
       }
@@ -206,7 +211,7 @@
   }
   async function init() {
     try {
-      const response = await fetch('/api/admin/config',{cache:'no-store'});
+      const response = await fetch('/api/admin/config',{cache:'no-store',credentials:'omit'});
       config = await response.json();
       if(!response.ok) throw new Error('This console is only available on admin-chat.fashionbazz.in.');
       if(!config.configured) $('#configNotice').textContent='Chat authentication/database is not configured.';

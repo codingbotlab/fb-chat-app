@@ -368,6 +368,7 @@ test('native app contacts and legacy-message cleanup are wired to authenticated 
   const chat = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'NativeConversationActivity.java'), 'utf8');
   const adminHtml = fs.readFileSync(path.join(root, 'admin', 'index.html'), 'utf8');
   const adminJs = fs.readFileSync(path.join(root, 'admin', 'admin.js'), 'utf8');
+  const gradle = fs.readFileSync(path.join(root, 'android', 'app', 'build.gradle'), 'utf8');
   assert.match(server, /app\.get\('\/api\/users', requireAuth/);
   assert.match(server, /app\.delete\('\/api\/me\/messages\/legacy-encrypted', requireAuth/);
   assert.match(server, /ciphertext=not\.like\.PLAIN%25/);
@@ -387,6 +388,15 @@ test('native app contacts and legacy-message cleanup are wired to authenticated 
   assert.match(home, /R\.drawable\.ic_chat/);
   assert.match(home, /R\.drawable\.ic_contacts/);
   assert.match(chat, /R\.drawable\.ic_send/);
+  assert.match(api, /static void requestPhoneOtp\(String phone\)/);
+  assert.match(api, /static Session verifyPhoneOtp\(String phone,String code\)/);
+  assert.match(api, /auth\/v1\/otp/);
+  assert.match(api, /auth\/v1\/verify/);
+  assert.match(home, /SmsRetriever\.getClient\(this\)\.startSmsUserConsent\(null\)/);
+  assert.match(home, /SMS_CONSENT_REQUEST/);
+  assert.match(home, /Verify OTP & sign in/);
+  assert.match(home, /Use email and password instead/);
+  assert.match(gradle, /play-services-auth-api-phone:18\.2\.0/);
   for (const icon of ['ic_chat','ic_updates','ic_groups','ic_calls','ic_contacts','ic_delete','ic_search','ic_person','ic_settings','ic_back','ic_send','ic_more','ic_add']) {
     const file = path.join(root, 'android', 'app', 'src', 'main', 'res', 'drawable', icon + '.xml');
     assert.ok(fs.existsSync(file), 'missing native icon vector: ' + icon);
@@ -559,8 +569,8 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
   assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
-  assert.match(gradle, /versionCode 16/);
-  assert.match(gradle, /versionName '1\.3\.3'/);
+  assert.match(gradle, /versionCode 17/);
+  assert.match(gradle, /versionName '1\.3\.4'/);
   const java = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'android-apk.yml'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');

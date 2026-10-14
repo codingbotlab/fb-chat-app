@@ -1207,14 +1207,14 @@ app.get('/api/admin/native-app', async (_req, res, next) => {
       generatedAt: new Date().toISOString(),
       app: {
         name: 'FB Chat Native',
-        version: '1.3.3',
-        versionCode: 16,
+        version: '1.3.4',
+        versionCode: 17,
         packageName: 'com.codingbotlab.fbchat',
         minSdk: 26,
         targetSdk: 34,
         sourceRepository: 'https://github.com/codingbotlab/fb-chat-app',
         latestApkUrl: 'https://github.com/codingbotlab/fb-chat-app/releases/latest/download/FBChat-latest.apk',
-        versionedApkUrl: 'https://github.com/codingbotlab/fb-chat-app/releases/download/fbchat-v1.3.3/fbchat-1.3.3.apk'
+        versionedApkUrl: 'https://github.com/codingbotlab/fb-chat-app/releases/download/fbchat-v1.3.4/fbchat-1.3.4.apk'
       },
       stats: { users, messages, legacyEncryptedMessages, androidDevices, onlineNow: online.size },
       service: {

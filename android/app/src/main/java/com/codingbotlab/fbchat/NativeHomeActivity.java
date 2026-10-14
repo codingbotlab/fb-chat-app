@@ -2,11 +2,15 @@ package com.codingbotlab.fbchat;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,6 +27,13 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.auth.api.phone.SmsRetriever;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.common.api.Status;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -33,11 +44,30 @@ public final class NativeHomeActivity extends Activity {
     private static final int BG=Color.rgb(11,20,26), SURFACE=Color.rgb(31,45,52),
             TEXT=Color.rgb(233,237,239), MUTED=Color.rgb(134,150,160), GREEN=Color.rgb(0,168,132);
     private static final String PREFS="fbchat_native_session";
+    private static final int SMS_CONSENT_REQUEST=8201;
+    private static final Pattern OTP_PATTERN=Pattern.compile("(?<!\\d)(\\d{4,8})(?!\\d)");
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
 
     private LinearLayout root, body, contactListContainer;
-    private EditText emailInput, passwordInput, contactSearch;
+    private EditText emailInput, passwordInput, contactSearch, phoneInput, otpInput;
+    private boolean emailLoginMode=false, otpRequested=false, smsConsentRegistered=false, autoOtpVerifying=false;
+    private String pendingPhone="";
+    private final BroadcastReceiver smsConsentReceiver=new BroadcastReceiver(){
+        @Override public void onReceive(Context context,Intent intent){
+            if(!SmsRetriever.SMS_RETRIEVED_ACTION.equals(intent.getAction()))return;
+            Status result=intent.getParcelableExtra(SmsRetriever.EXTRA_STATUS);
+            if(result==null)return;
+            if(result.getStatusCode()==CommonStatusCodes.SUCCESS){
+                Intent consent;
+                if(Build.VERSION.SDK_INT>=33)consent=intent.getParcelableExtra(SmsRetriever.EXTRA_CONSENT_INTENT,Intent.class);
+                else consent=intent.getParcelableExtra(SmsRetriever.EXTRA_CONSENT_INTENT);
+                if(consent!=null){try{startActivityForResult(consent,SMS_CONSENT_REQUEST);}catch(Exception ignored){}}
+            }else if(result.getStatusCode()==CommonStatusCodes.TIMEOUT&&otpRequested){
+                main.post(()->{if(status!=null)status.setText("SMS auto-read timed out. Enter the OTP manually.");});
+            }
+        }
+    };
     private TextView status;
     private NativeApi.Session session;
     private JSONObject me;
@@ -115,6 +145,56 @@ public final class NativeHomeActivity extends Activity {
 
     private void showLogin(){
         currentScreen="Login";
+        emailLoginMode=false;
+        otpRequested=false;
+        pendingPhone="";
+        registerSmsConsentReceiver();
+        startSmsConsentListening();
+        showPhoneLogin();
+    }
+    private void showPhoneLogin(){
+        currentScreen="Login";
+        base("Phone verification");
+        body.addView(text("Sign in with your phone",24,TEXT,true),new LinearLayout.LayoutParams(-1,dp(48)));
+        body.addView(text("We'll send a one-time SMS code to your mobile number. Existing FB Chat accounts with this verified phone number can sign in.",14,MUTED,false),new LinearLayout.LayoutParams(-1,dp(76)));
+        phoneInput=field("+91 98765 43210",InputType.TYPE_CLASS_PHONE);
+        phoneInput.setText(pendingPhone);
+        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(56));fp.topMargin=dp(12);body.addView(phoneInput,fp);
+        if(otpRequested){
+            phoneInput.setEnabled(false);
+            TextView change=text("Change phone number",13,GREEN,true);
+            fp=new LinearLayout.LayoutParams(-1,dp(34));body.addView(change,fp);
+            change.setOnClickListener(v->{otpRequested=false;pendingPhone="";showPhoneLogin();});
+            otpInput=field("Enter SMS verification code",InputType.TYPE_CLASS_NUMBER);
+            otpInput.setTextSize(22);otpInput.setLetterSpacing(0.22f);
+            fp=new LinearLayout.LayoutParams(-1,dp(58));fp.topMargin=dp(12);body.addView(otpInput,fp);
+            TextView verify=actionButton("Verify OTP & sign in");
+            fp=new LinearLayout.LayoutParams(-1,dp(54));fp.topMargin=dp(14);body.addView(verify,fp);
+            verify.setOnClickListener(v->verifyPhoneOtp(otpInput.getText().toString().trim()));
+            otpInput.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_DONE){verifyPhoneOtp(otpInput.getText().toString().trim());return true;}return false;});
+            TextView resend=text("Resend SMS code",14,GREEN,true);
+            resend.setGravity(Gravity.CENTER);
+            fp=new LinearLayout.LayoutParams(-1,dp(44));fp.topMargin=dp(6);body.addView(resend,fp);
+            resend.setOnClickListener(v->sendPhoneOtp(true));
+        }else{
+            TextView send=actionButton("Send OTP");
+            fp=new LinearLayout.LayoutParams(-1,dp(54));fp.topMargin=dp(18);body.addView(send,fp);
+            send.setOnClickListener(v->sendPhoneOtp(false));
+        }
+        TextView other=text("Use email and password instead",14,GREEN,true);
+        other.setGravity(Gravity.CENTER);
+        fp=new LinearLayout.LayoutParams(-1,dp(48));fp.topMargin=dp(8);body.addView(other,fp);
+        other.setOnClickListener(v->showEmailLogin());
+        TextView foot=text("SMS auto-read is optional. If Android asks to read the OTP message, approve it to verify automatically; manual entry is always available.",12,MUTED,false);
+        foot.setGravity(Gravity.CENTER);
+        foot.setPadding(dp(4),dp(8),dp(4),dp(8));
+        fp=new LinearLayout.LayoutParams(-1,-2);fp.topMargin=dp(8);body.addView(foot,fp);
+        status.setText(otpRequested?"Code sent to "+pendingPhone+". Waiting for SMS…":"Enter your mobile number to get a one-time code.");
+    }
+    private void showEmailLogin(){
+        stopSmsConsentReceiver();
+        currentScreen="Login";
+        emailLoginMode=true;
         base("Private messaging, made simple");
         body.addView(text("Welcome back",25,TEXT,true),new LinearLayout.LayoutParams(-1,dp(48)));
         body.addView(text("Sign in to your existing FB Chat account.",15,MUTED,false),new LinearLayout.LayoutParams(-1,dp(48)));
@@ -122,13 +202,101 @@ public final class NativeHomeActivity extends Activity {
         LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,dp(56));fp.topMargin=dp(18);body.addView(emailInput,fp);
         passwordInput=field("Password",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         fp=new LinearLayout.LayoutParams(-1,dp(56));fp.topMargin=dp(12);body.addView(passwordInput,fp);
-        TextView login=actionButton("Sign in");
+        TextView login=actionButton("Sign in with email");
         fp=new LinearLayout.LayoutParams(-1,dp(54));fp.topMargin=dp(20);body.addView(login,fp);
         login.setOnClickListener(v->doLogin());
         passwordInput.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_DONE){doLogin();return true;}return false;});
-        TextView foot=text("Native Android app • HTTPS connection",12,MUTED,false);
-        foot.setGravity(Gravity.CENTER);fp=new LinearLayout.LayoutParams(-1,dp(48));fp.topMargin=dp(12);body.addView(foot,fp);
+        TextView other=text("Use mobile number + SMS OTP",14,GREEN,true);other.setGravity(Gravity.CENTER);
+        fp=new LinearLayout.LayoutParams(-1,dp(48));fp.topMargin=dp(8);body.addView(other,fp);
+        other.setOnClickListener(v->showLogin());
         status.setText("Sign in with your existing account.");
+    }
+    private void registerSmsConsentReceiver(){
+        if(smsConsentRegistered)return;
+        IntentFilter filter=new IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION);
+        if(Build.VERSION.SDK_INT>=33)registerReceiver(smsConsentReceiver,filter,SmsRetriever.SEND_PERMISSION,null,Context.RECEIVER_EXPORTED);
+        else registerReceiver(smsConsentReceiver,filter,SmsRetriever.SEND_PERMISSION,null);
+        smsConsentRegistered=true;
+    }
+    private void startSmsConsentListening(){
+        try{SmsRetriever.getClient(this).startSmsUserConsent(null);}
+        catch(Exception ignored){/* Manual OTP entry remains available. */}
+    }
+    private void stopSmsConsentReceiver(){
+        if(!smsConsentRegistered)return;
+        try{unregisterReceiver(smsConsentReceiver);}catch(IllegalArgumentException ignored){}
+        smsConsentRegistered=false;
+    }
+    private String normalizePhone(String raw){
+        String value=raw==null?"":raw.trim().replaceAll("[\\\\s()\\\\-]","");
+        if(value.startsWith("00"))value="+"+value.substring(2);
+        if(value.matches("[0-9]{10}"))value="+91"+value;
+        else if(value.matches("0[0-9]{10}"))value="+91"+value.substring(1);
+        else if(value.matches("[0-9]{11,15}"))value="+"+value;
+        if(!value.matches("\\\\+[1-9][0-9]{7,14}"))return "";
+        return value;
+    }
+    private void sendPhoneOtp(boolean resend){
+        if(busy)return;
+        String phone=normalizePhone(phoneInput==null?pendingPhone:phoneInput.getText().toString());
+        if(phone.isEmpty()){status.setText("Enter a valid number with country code, e.g. +91 98765 43210.");return;}
+        pendingPhone=phone;
+        busy=true;status.setText("Requesting SMS verification code…");
+        startSmsConsentListening();
+        worker.execute(()->{
+            try{
+                NativeApi.requestPhoneOtp(phone);
+                main.post(()->{
+                    busy=false;otpRequested=true;autoOtpVerifying=false;showPhoneLogin();
+                    status.setText((resend?"A new code was requested. ":"SMS code sent to ")+pendingPhone+". Waiting for OTP…");
+                });
+            }catch(Exception e){main.post(()->{
+                busy=false;
+                String detail=e.getMessage()==null?"SMS delivery request failed.":e.getMessage();
+                status.setText(detail+" You can try again or use email sign-in.");
+            });}
+        });
+    }
+    private void verifyPhoneOtp(String rawCode){
+        if(busy||autoOtpVerifying&&rawCode.isEmpty())return;
+        String code=rawCode==null?"":rawCode.trim();
+        if(!code.matches("[0-9]{4,8}")){status.setText("Enter the verification code from the SMS.");return;}
+        busy=true;autoOtpVerifying=true;status.setText("Verifying phone number…");
+        worker.execute(()->{
+            try{
+                NativeApi.Session s=NativeApi.verifyPhoneOtp(pendingPhone,code);
+                JSONObject account=NativeApi.me(s);
+                main.post(()->{
+                    session=s;me=account;saveSession();busy=false;autoOtpVerifying=false;
+                    stopSmsConsentReceiver();showChats();
+                });
+            }catch(Exception e){main.post(()->{
+                busy=false;autoOtpVerifying=false;
+                status.setText(e.getMessage()==null?"OTP verification failed. Check the code and retry.":e.getMessage());
+            });}
+        });
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=SMS_CONSENT_REQUEST)return;
+        if(resultCode==RESULT_OK&&data!=null){
+            String sms=data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE);
+            if(sms!=null){
+                Matcher matcher=Pattern.compile("(?i)(?:otp|code|verification)[^0-9]{0,24}([0-9]{4,8})").matcher(sms);
+                String code=null;
+                if(matcher.find())code=matcher.group(1);
+                else{
+                    Matcher fallback=OTP_PATTERN.matcher(sms);
+                    while(fallback.find())code=fallback.group(1);
+                }
+                if(code!=null){
+                    if(otpInput!=null)otpInput.setText(code);
+                    verifyPhoneOtp(code);
+                    return;
+                }
+            }
+        }
+        if(otpRequested&&status!=null)status.setText("SMS not read. Enter the OTP manually.");
     }
     private EditText field(String hint,int type){
         EditText e=new EditText(this);e.setSingleLine(true);e.setTextSize(16);e.setTextColor(TEXT);
@@ -432,5 +600,5 @@ public final class NativeHomeActivity extends Activity {
         }).show();
     }
 
-    @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){stopSmsConsentReceiver();worker.shutdownNow();super.onDestroy();}
 }

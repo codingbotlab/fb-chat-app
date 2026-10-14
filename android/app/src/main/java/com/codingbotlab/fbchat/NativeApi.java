@@ -60,6 +60,27 @@ final class NativeApi {
         JSONObject user=j.optJSONObject("user");
         return new Session(a,r,email,user==null?"":user.optString("id"));
     }
+    static void requestPhoneOtp(String phone) throws Exception {
+        Config cfg=config();
+        JSONObject body=new JSONObject();
+        body.put("phone",phone);
+        body.put("create_user",false);
+        body.put("channel","sms");
+        request(cfg.url+"/auth/v1/otp","POST",body,null,cfg.key);
+    }
+    static Session verifyPhoneOtp(String phone,String code) throws Exception {
+        Config cfg=config();
+        JSONObject body=new JSONObject();
+        body.put("phone",phone);
+        body.put("token",code);
+        body.put("type","sms");
+        JSONObject j=request(cfg.url+"/auth/v1/verify","POST",body,null,cfg.key);
+        String a=j.optString("access_token"), r=j.optString("refresh_token");
+        if(a.isEmpty()||r.isEmpty()) throw new Exception("OTP verification response was incomplete.");
+        JSONObject user=j.optJSONObject("user");
+        if(user==null||user.optString("id").isEmpty()) throw new Exception("Verified account information was missing.");
+        return new Session(a,r,phone,user.optString("id"));
+    }
     static JSONObject me(Session s) throws Exception {
         return request(BASE+"/api/me","GET",null,s.accessToken,null);
     }

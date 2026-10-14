@@ -32,6 +32,7 @@ const online = new Map();
 const socketUsers = new Map();
 const authCache = new Map();
 const sentAt = new Map();
+const pendingCallEvents = new Map();
 const USERNAME_RE = /^[a-z0-9_.]{3,24}$/;
 const MAX_CIPHERTEXT_BYTES = 65_536;
 const FCM_PROJECT_ID = String(process.env.FCM_PROJECT_ID || '').trim();
@@ -216,9 +217,15 @@ async function sendNativePushToUser(userId, payload) {
     const response = await fcmMessaging.sendEachForMulticast({
       tokens,
       data: {
+        type: payload.type === 'incoming_call' ? 'incoming_call' : 'message',
         title: String(payload.title || 'New message').slice(0, 80),
-        body: 'You have a new encrypted message',
+        body: payload.type === 'incoming_call'
+          ? String(payload.body || 'Incoming FB Chat call').slice(0, 140)
+          : 'You have a new encrypted message',
         username: validUsername(payload.username) ? normalize(payload.username) : '',
+        caller_username: validUsername(payload.caller_username) ? normalize(payload.caller_username) : '',
+        caller_display_name: String(payload.caller_display_name || '').slice(0, 80),
+        call_kind: payload.call_kind === 'video' ? 'video' : 'audio',
         url: '/'
       },
       android: { priority: 'high', ttl: 60 * 1000 }
@@ -480,6 +487,21 @@ app.get('/api/chats/:username/messages', requireAuth, async (req, res, next) => 
   } catch (error) { next(error); }
 });
 
+function queueCallEvent(userId, event, data) {
+  if (!validUuid(userId)) return;
+  const now = Date.now();
+  const queued = (pendingCallEvents.get(userId) || []).filter(item => item.expiresAt > now);
+  queued.push({ event, data, expiresAt: now + 45_000 });
+  pendingCallEvents.set(userId, queued.slice(-80));
+}
+
+function flushPendingCallEvents(userId, socket) {
+  const now = Date.now();
+  const queued = (pendingCallEvents.get(userId) || []).filter(item => item.expiresAt > now);
+  pendingCallEvents.delete(userId);
+  for (const item of queued) socket.emit(item.event, item.data);
+}
+
 function broadcastPresence() {
   io.emit('presence:list', [...socketUsers.values()]);
 }
@@ -505,6 +527,7 @@ io.on('connection', (socket) => {
   socketUsers.set(socket.id, user);
   socket.emit('session:ready', { user, onlineUsers: [...socketUsers.values()] });
   broadcastPresence();
+  flushPendingCallEvents(user.id, socket);
 
   socket.on('chat:open', async (data = {}) => {
     try {
@@ -623,9 +646,18 @@ io.on('connection', (socket) => {
       if (!validUsername(username) || username === user.username) return socket.emit('call:error', { message: 'Choose a valid contact.' });
       const peer = await getProfileByUsername(username);
       if (!peer?.public_key) return socket.emit('call:error', { message: 'Contact not found or not ready.' });
+      const incoming = { from: user.username, displayName: user.display_name, kind };
+      void sendNativePushToUser(peer.id, {
+        type: 'incoming_call',
+        title: (user.display_name || user.username) + ' is calling',
+        body: 'Incoming ' + (kind === 'video' ? 'video' : 'voice') + ' call',
+        caller_username: user.username,
+        caller_display_name: user.display_name,
+        call_kind: kind
+      });
       const peerSocket = online.get(peer.id);
-      if (!peerSocket) return socket.emit('call:error', { message: 'This contact is offline. Ask them to open FB Chat to receive the call.' });
-      io.to(peerSocket).emit('call:incoming', { from: user.username, displayName: user.display_name, kind });
+      if (peerSocket) io.to(peerSocket).emit('call:incoming', incoming);
+      else queueCallEvent(peer.id, 'call:incoming', incoming);
       socket.emit('call:ringing', { to: username, kind });
     } catch { socket.emit('call:error', { message: 'Could not start the call.' }); }
   });
@@ -635,20 +667,25 @@ io.on('connection', (socket) => {
     const peer = await getProfileByUsername(username).catch(() => null);
     const peerSocket = peer && online.get(peer.id);
     if (peerSocket) io.to(peerSocket).emit('call:accepted', { from: user.username });
+    else if (peer) queueCallEvent(peer.id, 'call:accepted', { from: user.username });
   });
   socket.on('call:signal', async (data = {}) => {
     const username = normalize(data.to);
     if (!validUsername(username) || username === user.username || !validSignalPayload(data.signal)) return;
     const peer = await getProfileByUsername(username).catch(() => null);
+    const signal = { from: user.username, signal: data.signal };
     const peerSocket = peer && online.get(peer.id);
-    if (peerSocket) io.to(peerSocket).emit('call:signal', { from: user.username, signal: data.signal });
+    if (peerSocket) io.to(peerSocket).emit('call:signal', signal);
+    else if (peer) queueCallEvent(peer.id, 'call:signal', signal);
   });
   socket.on('call:end', async (data = {}) => {
     const username = normalize(data.to);
     if (!validUsername(username) || username === user.username) return;
     const peer = await getProfileByUsername(username).catch(() => null);
+    const ended = { from: user.username };
     const peerSocket = peer && online.get(peer.id);
-    if (peerSocket) io.to(peerSocket).emit('call:ended', { from: user.username });
+    if (peerSocket) io.to(peerSocket).emit('call:ended', ended);
+    else if (peer) queueCallEvent(peer.id, 'call:ended', ended);
   });
 
   socket.on('disconnect', () => {

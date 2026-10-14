@@ -249,7 +249,7 @@ async function storeProfileAvatar(userId, dataUrl) {
   if (!validUuid(userId) || !validAvatarDataUrl(dataUrl)) {
     throw appError(400, 'INVALID_AVATAR', 'The profile photo is invalid.');
   }
-  const match = dataUrl.match(/^data:image\\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+  const match = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
   if (!match) throw appError(400, 'INVALID_AVATAR', 'The profile photo encoding is invalid.');
   const contentType = match[1] === 'jpeg' ? 'image/jpeg' : 'image/' + match[1];
   const extension = match[1] === 'jpeg' ? 'jpg' : match[1];

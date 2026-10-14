@@ -23,6 +23,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <activity android:name=".NativeConversationActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".NativeHomeActivity"
             android:exported="true"

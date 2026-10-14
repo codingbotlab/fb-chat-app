@@ -66,5 +66,9 @@ final class NativeApi {
     static JSONArray chats(Session s) throws Exception {
         return request(BASE+"/api/chats","GET",null,s.accessToken,null).optJSONArray("chats");
     }
+    static JSONObject saveCrypto(Session s, JSONObject publicKey, JSONObject backup) throws Exception {
+        JSONObject body=new JSONObject();body.put("public_key",publicKey);body.put("key_backup",backup);
+        return request(BASE+"/api/me/crypto","PUT",body,s.accessToken,null);
+    }
     private NativeApi() {}
 }

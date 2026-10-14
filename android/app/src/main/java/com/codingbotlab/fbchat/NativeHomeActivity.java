@@ -145,8 +145,8 @@ public final class NativeHomeActivity extends Activity {
         body.addView(card,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
         heading.addView(text("Chats",21,TEXT,true),new LinearLayout.LayoutParams(0,dp(58),1));
-        Button refresh=button("Refresh");heading.addView(refresh,new LinearLayout.LayoutParams(dp(108),dp(42)));
-        refresh.setOnClickListener(v->showChats());body.addView(heading);
+        Button refresh=button("New chat");heading.addView(refresh,new LinearLayout.LayoutParams(dp(108),dp(42)));
+        refresh.setOnClickListener(v->{EditText input=field("Username",InputType.TYPE_CLASS_TEXT);new android.app.AlertDialog.Builder(this).setTitle("Start a new chat").setMessage("Enter the exact FB Chat username.").setView(input).setNegativeButton("Cancel",null).setPositiveButton("Open",(dialog,which)->{String handle=input.getText().toString().trim().replace("@","");if(handle.isEmpty()){status.setText("Enter a username.");return;}Intent intent=new Intent(this,NativeConversationActivity.class);intent.putExtra("username",handle);intent.putExtra("displayName","@"+handle);startActivity(intent);}).show();});body.addView(heading);
         if(chats==null||chats.length()==0){
             TextView empty=text("No conversations yet. Your chat list will appear here when you start messaging.",15,MUTED,false);
             empty.setGravity(Gravity.CENTER);empty.setPadding(dp(12),dp(24),dp(12),dp(24));
@@ -167,7 +167,7 @@ public final class NativeHomeActivity extends Activity {
                 labels.addView(text(handle,13,MUTED,false),new LinearLayout.LayoutParams(-1,dp(24)));
                 row.addView(labels,new LinearLayout.LayoutParams(0,dp(58),1));
                 LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(74));rp.bottomMargin=dp(8);body.addView(row,rp);
-                row.setOnClickListener(v->Toast.makeText(this,"Native encrypted conversation screen is the next migration step. Your existing web chat remains unchanged.",Toast.LENGTH_LONG).show());
+                row.setOnClickListener(v->{Intent intent=new Intent(this,NativeConversationActivity.class);intent.putExtra("username",peer.optString("username",""));intent.putExtra("displayName",name);startActivity(intent);});
             }
         }
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);

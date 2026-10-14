@@ -827,11 +827,19 @@ app.delete('/api/fcm/register', requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get('/api/me', requireAuth, (req, res) => res.json({
-  user: { id: req.authUser.id, email: req.authUser.email || null },
-  profile: publicProfile(req.profile, req.authUser.user_metadata),
-  key_backup: req.profile.key_backup || null
-}));
+app.get('/api/me', requireAuth, async (req, res, next) => {
+  let metadata = req.authUser.user_metadata || {};
+  try {
+    metadata = await ensureStoredAvatarMetadata(req.authUser);
+  } catch {
+    // An avatar migration must never block a user from opening their own profile.
+  }
+  res.json({
+    user: { id: req.authUser.id, email: req.authUser.email || null },
+    profile: publicProfile(req.profile, metadata),
+    key_backup: req.profile.key_backup || null
+  });
+});
 app.post('/api/profile', requireAuth, async (req, res, next) => {
   try {
     const username = normalize(req.body?.username);

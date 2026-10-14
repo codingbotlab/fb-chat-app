@@ -68,7 +68,7 @@
     if (!element) return;
     element.replaceChildren();
     const photo = person?.avatar_url;
-    if (typeof photo === 'string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(photo) && photo.length <= 90_000) {
+    if (typeof photo === 'string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(photo) && photo.length <= 40_000) {
       element.classList.add('has-photo');
       const image = document.createElement('img');
       image.src = photo; image.alt = nameOf(person) + ' profile photo';
@@ -1423,6 +1423,8 @@
       });
       profile = Object.assign({}, profile, data.profile);
       $('#profileButton').title = nameOf(profile) + ' · profile';
+      setAvatar($('#profileButton'), profile);
+      $('#profileButton').setAttribute('aria-label', nameOf(profile) + ' profile');
       if (socket?.connected) socket.emit('profile:refresh');
       if (activePeer) {
         const newer = chats.get(activePeer.id);

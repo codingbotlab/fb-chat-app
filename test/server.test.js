@@ -174,7 +174,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v8/);
+  assert.match(sw, /fb-chat-shell-v9/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /Microphone for voice calls/);
   assert.match(js, /Camera for video calls/);
@@ -237,4 +237,23 @@ test('native FCM integration registers Android tokens and declares notification 
   assert.match(gradle, /com\.google\.firebase:firebase-messaging/);
   assert.equal(firebaseConfig.project_info.project_id, 'fbchat-native-push-20261014');
   assert.equal(firebaseConfig.client[0].client_info.android_client_info.package_name, 'com.codingbotlab.fbchat');
+});
+
+
+test('single-chat layout and call-media recovery handle Android WebView', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  assert.match(js, /let chatOpenRequest = 0/);
+  assert.match(js, /requestId !== chatOpenRequest/);
+  assert.match(js, /async function acquireCallMedia\(kind\)/);
+  assert.match(js, /Request the camera separately/);
+  assert.match(js, /audio source not found/i);
+  assert.match(js, /callMediaErrorMessage\(error\)/);
+  assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
+  assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
+  assert.match(sw, /fb-chat-shell-v9/);
 });

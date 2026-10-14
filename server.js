@@ -743,9 +743,9 @@ app.post('/api/qr/start', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ id, secret, expiresIn: 90 });
 });
-app.get('/api/qr/status', (req, res) => {
+app.post('/api/qr/status', (req, res) => {
   pruneQrPairings();
-  const id = String(req.query.id || ''), secret = String(req.query.secret || '');
+  const id = String(req.body?.id || ''), secret = String(req.body?.secret || '');
   const item = qrPairings.get(id);
   if (!item || !secret || !crypto.timingSafeEqual(Buffer.from(item.secretHash), Buffer.from(crypto.createHash('sha256').update(secret).digest('hex')))) {
     return res.status(404).json({ status: 'expired' });

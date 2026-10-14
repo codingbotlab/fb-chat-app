@@ -79,37 +79,52 @@ public final class NativeConversationActivity extends Activity {
         send.setOnClickListener(v->sendMessage());root.addView(sendBar);setContentView(root);
     }
     private void unlockAndConnect(){
-        EditText password=new EditText(this);password.setSingleLine(true);password.setHint("Account password");
-        password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        new android.app.AlertDialog.Builder(this).setTitle("Unlock encrypted messages")
-            .setMessage("Enter your account password to unlock this device's message key. It will not be saved.")
-            .setView(password).setCancelable(false).setNegativeButton("Cancel",(d,w)->finish())
-            .setPositiveButton("Unlock",(d,w)->loadAndUnlock(password.getText().toString())).show();
-    }
-    private void loadAndUnlock(String password){
-        status.setText("Loading account and unlocking key…");
+        status.setText("Loading secure account…");
         worker.execute(()->{
             try{
                 JSONObject account=NativeApi.me(session), mine=account.optJSONObject("profile");
                 if(mine==null)throw new Exception("Account profile was missing.");
                 JSONObject pub=mine.optJSONObject("public_key"), backup=account.optJSONObject("key_backup");
+                if(pub==null&&backup==null){main.post(()->showPasswordPrompt(account,mine,pub,backup));return;}
+                if(pub==null||backup==null)throw new Exception("This account has incomplete encryption-key data. Stop here to protect old messages.");
+                JSONObject local=NativeKeyStore.load(this,mine.getString("id"));
+                if(local!=null&&NativeCrypto.fingerprint(local).equals(NativeCrypto.fingerprint(pub))){
+                    main.post(()->{me=account;profile=mine;privateKey=local;connectSocket();});return;
+                }
+                main.post(()->showPasswordPrompt(account,mine,pub,backup));
+            }catch(Exception e){main.post(()->showKeyError(e.getMessage()));}
+        });
+    }
+    private void showPasswordPrompt(JSONObject account,JSONObject mine,JSONObject pub,JSONObject backup){
+        EditText password=new EditText(this);password.setSingleLine(true);password.setHint("Account password");
+        password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        new android.app.AlertDialog.Builder(this).setTitle("Unlock encrypted messages")
+            .setMessage("Enter your account password once on this device. The key will be protected by Android Keystore; your password is not saved.")
+            .setView(password).setCancelable(false).setNegativeButton("Cancel",(d,w)->finish())
+            .setPositiveButton("Unlock",(d,w)->{
+                String value=password.getText().toString();if(value.isEmpty()){showKeyError("Enter your account password.");return;}
+                unlockWithPassword(account,mine,pub,backup,value);
+            }).show();
+    }
+    private void unlockWithPassword(JSONObject account,JSONObject mine,JSONObject pub,JSONObject backup,String password){
+        status.setText("Unlocking encrypted key…");
+        worker.execute(()->{
+            try{
                 JSONObject unlocked;
                 if(pub==null&&backup==null){
                     JSONObject created=NativeCrypto.create(password);
                     NativeApi.saveCrypto(session,created.getJSONObject("public_key"),created.getJSONObject("key_backup"));
-                    pub=created.getJSONObject("public_key");mine.put("public_key",pub);unlocked=created.getJSONObject("private_key");
-                }else if(pub==null||backup==null){
-                    throw new Exception("This account has incomplete encryption-key data. Stop here to protect old messages.");
+                    mine.put("public_key",created.getJSONObject("public_key"));unlocked=created.getJSONObject("private_key");
                 }else unlocked=NativeCrypto.unlock(backup,password,pub);
-                JSONObject finalKey=unlocked;
-                main.post(()->{me=account;profile=mine;privateKey=finalKey;connectSocket();});
-            }catch(Exception e){main.post(()->{
-                status.setText(e.getMessage()==null?"Could not unlock encryption key.":e.getMessage());
-                new android.app.AlertDialog.Builder(this).setTitle("Could not unlock")
-                    .setMessage(status.getText()).setPositiveButton("Try again",(x,y)->unlockAndConnect())
-                    .setNegativeButton("Back",(x,y)->finish()).show();
-            });}
+                NativeKeyStore.save(this,mine.getString("id"),unlocked);
+                main.post(()->{me=account;profile=mine;privateKey=unlocked;connectSocket();});
+            }catch(Exception e){main.post(()->showKeyError(e.getMessage()));}
         });
+    }
+    private void showKeyError(String message){
+        String detail=message==null||message.isEmpty()?"Could not unlock encryption key.":message;status.setText(detail);
+        new android.app.AlertDialog.Builder(this).setTitle("Secure chat unavailable").setMessage(detail)
+            .setPositiveButton("Try again",(x,y)->unlockAndConnect()).setNegativeButton("Back",(x,y)->finish()).show();
     }
     private void connectSocket(){
         try{

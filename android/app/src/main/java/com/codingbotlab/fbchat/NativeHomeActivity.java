@@ -179,7 +179,7 @@ public final class NativeHomeActivity extends Activity {
         LinearLayout.LayoutParams actionLp=new LinearLayout.LayoutParams(-1,dp(52));actionLp.topMargin=dp(12);body.addView(actions,actionLp);
         Button signOut=button("Sign out");LinearLayout.LayoutParams so=new LinearLayout.LayoutParams(-1,dp(48));so.topMargin=dp(8);body.addView(signOut,so);
         signOut.setOnClickListener(v->{session=null;me=null;getSharedPreferences(PREFS,MODE_PRIVATE).edit().clear().apply();showLogin();});
-        status.setText("Native sign-in and chat-list milestone. Encrypted chat screen is still being migrated.");
+        status.setText("Native chat list and encrypted messaging are available. More native features are being migrated.");
     }
     private void showProfile(){
         base("Profile & settings");
@@ -187,7 +187,7 @@ public final class NativeHomeActivity extends Activity {
         body.addView(text(p==null?"Your profile":p.optString("display_name","Your profile"),24,TEXT,true),new LinearLayout.LayoutParams(-1,dp(56)));
         body.addView(text(p==null?"":("@"+p.optString("username","")),15,MUTED,false),new LinearLayout.LayoutParams(-1,dp(38)));
         body.addView(text("Account: "+session.email,14,MUTED,false),new LinearLayout.LayoutParams(-1,dp(44)));
-        body.addView(text("Security: encrypted messages stay encrypted. Native key recovery and profile editing are not yet migrated.",14,TEXT,false),new LinearLayout.LayoutParams(-1,dp(96)));
+        body.addView(text("Encryption keys are protected with Android Keystore on this device. Native profile editing, photo updates and contact matching are still being migrated.",14,TEXT,false),new LinearLayout.LayoutParams(-1,dp(96)));
         Button back=button("Back to chats");body.addView(back,new LinearLayout.LayoutParams(-1,dp(50)));back.setOnClickListener(v->showChats());
     }
     private void requestContacts(){

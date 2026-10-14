@@ -1,10 +1,11 @@
 'use strict';
-const CACHE_NAME = 'fb-chat-shell-v22';
+const CACHE_NAME = 'fb-chat-shell-v23';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
   '/styles.css?v=wa-profile-fullscreen-6',
   '/app.js',
+  '/qr-login.js?v=1',
   '/pwa.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

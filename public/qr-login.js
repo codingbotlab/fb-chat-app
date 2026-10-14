@@ -42,8 +42,11 @@
           if (data.status === 'approved' && data.session?.access_token && data.session?.refresh_token) {
             clearInterval(pollTimer); clearTimeout(expiryTimer);
             localStorage.setItem('fbchat-session', JSON.stringify(data.session));
-            status('Approved! Opening your chats…');
-            location.replace(location.pathname);
+            status('Approved. Enter your account password to unlock encrypted chat history on this PC…');
+            const password = window.prompt('QR approved. Enter your FB Chat account password to unlock encrypted messages on this PC:');
+            if (!password) { localStorage.removeItem('fbchat-session'); status('Sign-in cancelled. Generate a new QR to try again.'); return; }
+            window.dispatchEvent(new CustomEvent('fbchat:qr-session-approved', { detail: { password } }));
+            closeModal();
             return;
           }
           if (data.status === 'expired' || data.status === 'pending' && data.expiresIn <= 0) {

@@ -115,7 +115,8 @@
       return;
     }
     const marker = 'fbchat-fcm-registered-' + me.id;
-    if (localStorage.getItem(marker) === nativeFcmToken) return;
+    // Always re-register on app resume/auth; the server may have lost its token
+    // table even when this browser still has a local marker. The endpoint upserts.
     try {
       await api('/api/fcm/register', {
         method: 'POST',

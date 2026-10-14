@@ -174,7 +174,11 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v4/);
+  assert.match(sw, /fb-chat-shell-v8/);
+  assert.match(js, /showCallPermissionPrompt/);
+  assert.match(js, /Microphone for voice calls/);
+  assert.match(js, /Camera for video calls/);
+  assert.match(html, /id="callOverlay"/);
 });
 
 test('native FCM token validation accepts bounded device tokens only', () => {

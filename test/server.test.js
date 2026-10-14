@@ -268,8 +268,8 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
   assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
-  assert.match(gradle, /versionCode 7/);
-  assert.match(gradle, /versionName '1\.2\.4'/);
+  assert.match(gradle, /versionCode 8/);
+  assert.match(gradle, /versionName '1\.2\.5'/);
   const java = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'android-apk.yml'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
@@ -277,6 +277,7 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   assert.match(manifest, /android\.permission\.REQUEST_INSTALL_PACKAGES/);
   assert.match(java, /checkForAppUpdateAsyncBridge/);
   assert.match(java, /checkForAppUpdateIfDue/);
+  assert.match(java, /checkForAppUpdateNow\(\)/);
   assert.match(java, /AUTO_UPDATE_CHECK_INTERVAL_MS = 6L \* 60L \* 60L \* 1000L/);
   assert.match(java, /onPageFinished\(WebView view, String url\)/);
   assert.match(java, /ACTION_MANAGE_UNKNOWN_APP_SOURCES/);
@@ -284,6 +285,8 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   assert.match(workflow, /ANDROID_SIGNING_KEYSTORE_BASE64/);
   assert.match(workflow, /Publish versioned APK for in-app updates/);
   assert.match(app, /Check for app updates/);
+  assert.match(app, /checkForAppUpdate\(\)/);
+  assert.match(app, /checkForAppUpdateNow/);
   assert.match(app, /fbchatOnNativeUpdateCheck/);
 });
 

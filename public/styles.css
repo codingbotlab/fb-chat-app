@@ -206,3 +206,24 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   .authOverlay{padding:14px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* Bootstrap + Tailwind utility layer: retain FB Chat's custom visual identity. */
+.authcard{border:1px solid rgba(120,160,170,.20);box-shadow:0 24px 80px rgba(0,0,0,.30),0 0 0 1px rgba(255,255,255,.025)}
+.auth-brand .brand-icon{box-shadow:0 8px 24px rgba(0,168,132,.22)}
+.primary,.install-app-btn,.auth-tab,.filter,.iconbtn{transition:background-color .18s ease,border-color .18s ease,color .18s ease,transform .18s ease,box-shadow .18s ease}
+.primary:hover{box-shadow:0 8px 26px rgba(0,168,132,.20)}
+.search:focus,.messagebox:focus-within{box-shadow:0 0 0 3px rgba(0,168,132,.10)}
+@media(max-width:700px){
+  .app{grid-template-columns:minmax(0,1fr);border:0}
+  .rail{display:none}
+  .inbox{border-right:0}
+  .inboxhead{padding:20px 18px 15px}
+  .chatlist{padding-inline:10px}
+  .conversation{min-height:0}
+  .authOverlay{padding:16px}
+  .authcard{width:min(100%,480px);padding:25px 20px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}

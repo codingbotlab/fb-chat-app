@@ -17,7 +17,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet" crossorigin="anonymous">
   <script>tailwind = { config: { corePlugins: { preflight: false }, darkMode: "class", theme: { extend: { colors: { chat: { page: "#071015", panel: "#111b21", green: "#00a884" } }, boxShadow: { glow: "0 0 32px rgba(0,168,132,.14)" } } } };</script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/styles.css?v=376322e">
+  <link rel="stylesheet" href="/styles.css?v=profile-admin-1">
 </head>
 <body>
   <div class="app" id="app">
@@ -36,6 +36,7 @@
       <header class="inboxhead">
         <div class="inbox-title"><h1>Chats</h1><div class="subline"><span class="connection-dot" id="connectionDot"></span><span id="inboxSub">Secure messaging</span></div></div>
         <div class="inbox-actions">
+          <button id="mobileProfileButton" class="iconbtn mobile-profile" title="Your profile" aria-label="Your profile"><i class="bi bi-person-circle" aria-hidden="true"></i></button>
           <button id="mobileSettingsButton" class="iconbtn mobile-settings" title="Message sound and notifications" aria-label="Message sound and notifications"><svg viewBox="0 0 24 24"><path d="M12 3a2 2 0 0 0-2 2v.4a7 7 0 0 0-4.5 6.6V16l-1.5 2h16L18.5 16v-4a7 7 0 0 0-4.5-6.6V5a2 2 0 0 0-2-2Z"/><path d="M9 21h6"/></svg></button>
           <button id="newChat" class="iconbtn newchat" title="New chat" aria-label="New chat"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
         </div>
@@ -132,6 +133,42 @@
     </div>
   </section>
 
+  <div class="modalback profile-modal" id="profileModal" hidden>
+    <section class="modalcard profile-card" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
+      <button class="modalclose" id="profileClose" type="button" aria-label="Close">×</button>
+      <p class="profile-eyebrow">YOUR ACCOUNT</p>
+      <h2 id="profileTitle">Edit profile</h2>
+      <p class="profile-intro">Choose how you appear to people you chat with.</p>
+      <form id="profileForm">
+        <div class="profile-photo-row">
+          <div id="profileAvatarPreview" class="profile-avatar-preview">?</div>
+          <div class="profile-photo-actions">
+            <strong>Profile photo</strong>
+            <small>JPG, PNG or WebP · automatically resized</small>
+            <div class="profile-photo-buttons">
+              <button type="button" class="text-action" id="chooseAvatarButton">Change photo</button>
+              <button type="button" class="text-action muted-action" id="removeAvatarButton">Remove</button>
+            </div>
+          </div>
+          <input id="profileAvatarFile" type="file" accept="image/*" hidden>
+        </div>
+        <label for="profileNameInput">Display name</label>
+        <input id="profileNameInput" name="display_name" maxlength="40" minlength="2" required autocomplete="name" placeholder="Your name">
+        <label for="profileUsernameInput">Username</label>
+        <input id="profileUsernameInput" name="username" maxlength="24" minlength="3" pattern="[A-Za-z0-9._]{3,24}" required autocomplete="username" placeholder="your_username">
+        <small class="profile-field-hint">3–24 letters, numbers, dots or underscores. Must be unique.</small>
+        <label for="profileBioInput">About</label>
+        <textarea id="profileBioInput" name="bio" maxlength="160" rows="3" placeholder="A little about you (optional)"></textarea>
+        <div class="profile-char-count"><span id="profileEmailLabel"></span><span><b id="profileBioCount">0</b>/160</span></div>
+        <div id="profileSaveError" class="profile-save-error" role="status"></div>
+        <button class="primary" id="profileSaveButton" type="submit">Save changes</button>
+      </form>
+      <div class="profile-footer-actions">
+        <button type="button" class="text-action" id="profileSecurityButton">Privacy & encryption</button>
+        <button type="button" class="text-action danger-text" id="profileSignOutButton">Sign out</button>
+      </div>
+    </section>
+  </div>
   <div class="modalback" id="genericModal" hidden><section class="modalcard" role="dialog" aria-modal="true" aria-labelledby="genericTitle"><button class="modalclose" id="genericCancel" aria-label="Close">×</button><h2 id="genericTitle">New chat</h2><p id="genericDescription">Enter a person's username.</p><form id="genericForm"><label id="genericLabel" for="genericInput">Username</label><input id="genericInput" maxlength="24" placeholder="e.g. sana_khan" autocomplete="off" spellcheck="false" required><button class="primary" type="submit" id="genericSubmit">Start chat</button></form><div id="genericFoot" class="modal-foot"></div></section></div>
   <section class="call-overlay" id="callOverlay" hidden aria-label="Call window">
     <div class="call-card call-fullscreen">

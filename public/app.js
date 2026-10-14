@@ -763,7 +763,14 @@
         if (!data.access_token || !data.refresh_token) { setAuthMode('login', 'Account created. Check your email for the confirmation link, then sign in.'); return; }
         saveSession(data);
       } else {
-        const data = await authRequest('token?grant_type=password', { email, password });
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Sign-in failed (' + response.status + ').');
         if (!data.access_token || !data.refresh_token) throw new Error('Sign-in did not return a session.');
         saveSession(data);
       }

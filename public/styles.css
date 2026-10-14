@@ -163,8 +163,10 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .modal-foot .text-action,.modal-foot .danger-action{flex:1;border-radius:8px;border:1px solid #31504e;padding:10px 12px;font-size:11px}
 .danger-action{background:#3b2325;color:#ffb4b0;border:1px solid #664042}
 .danger-action:hover{background:#4b292c}
-.toast{position:fixed;left:50%;bottom:33px;z-index:70;display:none;max-width:min(560px,90vw);transform:translateX(-50%);border:1px solid #3b575b;border-radius:10px;background:#1b3037;padding:11px 16px;box-shadow:0 8px 40px #0007;color:#e9f5f4;text-align:center;font-size:11px;line-height:1.5}
-.toast.show{display:block}
+.toast{position:fixed;left:50%;bottom:33px;z-index:70;display:none;align-items:center;gap:10px;width:max-content;max-width:min(560px,90vw);transform:translateX(-50%);margin:0;border:1px solid #3b575b;border-radius:10px;background:#1b3037;padding:11px 16px;box-shadow:0 8px 40px #0007;color:#e9f5f4;text-align:left;font-size:12px;line-height:1.5;--bs-alert-color:#e9f5f4;--bs-alert-bg:#1b3037;--bs-alert-border-color:#3b575b}
+.toast.show{display:flex}
+.toast .bi{font-size:16px;color:#25d366;flex-shrink:0}
+.newchat .bi{font-size:20px;line-height:1}
 @media(max-width:1000px){
   .app{grid-template-columns:58px minmax(260px,330px) minmax(0,1fr)}
   .inboxhead{padding-inline:15px}

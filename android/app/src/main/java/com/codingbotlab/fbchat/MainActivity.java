@@ -189,8 +189,14 @@ public final class MainActivity extends Activity {
         });
 
         setContentView(webView);
-        String username = notificationUsername(getIntent());
-        webView.loadUrl(username == null ? APP_URL : APP_URL + "/?openChat=" + Uri.encode(username));
+        String callFrom = notificationCallUsername(getIntent());
+        String callKind = "video".equals(getIntent().getStringExtra("callKind")) ? "video" : "audio";
+        if (callFrom != null) {
+            webView.loadUrl(APP_URL + "/?openCall=" + Uri.encode(callFrom) + "&callKind=" + callKind);
+        } else {
+            String username = notificationUsername(getIntent());
+            webView.loadUrl(username == null ? APP_URL : APP_URL + "/?openChat=" + Uri.encode(username));
+        }
         refreshFcmToken();
     }
 
@@ -549,6 +555,27 @@ public final class MainActivity extends Activity {
         return username;
     }
 
+    private String notificationCallUsername(Intent intent) {
+        if (intent == null) return null;
+        String username = intent.getStringExtra("callFrom");
+        if (username == null || !USERNAME.matcher(username).matches()) return null;
+        return username.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private void routeNotificationToCall(String username, String kind) {
+        if (webView == null) return;
+        String quotedUser = JSONObject.quote(username);
+        String quotedKind = JSONObject.quote("video".equals(kind) ? "video" : "audio");
+        String script = "(function(){if(typeof window.fbchatOpenNativeCall==='function'){window.fbchatOpenNativeCall("
+                + quotedUser + "," + quotedKind + ");return true;}return false;})()";
+        webView.evaluateJavascript(script, value -> {
+            if (!"true".equals(value) && webView != null) {
+                webView.loadUrl(APP_URL + "/?openCall=" + Uri.encode(username) + "&callKind="
+                        + Uri.encode("video".equals(kind) ? "video" : "audio"));
+            }
+        });
+    }
+
     private boolean handleNavigation(Uri uri) {
         if (uri == null) return true;
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
@@ -621,8 +648,13 @@ public final class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        String username = notificationUsername(intent);
-        if (username != null) routeNotificationToChat(username);
+        String callFrom = notificationCallUsername(intent);
+        if (callFrom != null) {
+            routeNotificationToCall(callFrom, intent.getStringExtra("callKind"));
+        } else {
+            String username = notificationUsername(intent);
+            if (username != null) routeNotificationToChat(username);
+        }
         refreshFcmToken();
     }
 

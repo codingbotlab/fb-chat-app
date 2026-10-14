@@ -638,3 +638,96 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 }
 
 @media(max-width:720px){.mobile-bottom-nav{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+
+/* WhatsApp-style contact list and tap-to-view contact profile. */
+.profile-avatar-trigger{cursor:pointer;touch-action:manipulation}
+.profile-avatar-trigger:focus-visible{outline:2px solid #25d366;outline-offset:3px}
+.convhead .person .profile-avatar-trigger{transition:transform .14s ease}
+.convhead .person .profile-avatar-trigger:active{transform:scale(.96)}
+.headactions #chatDetails[hidden]{display:none!important}
+.contacts-modal{z-index:68}
+.contacts-page{background:#0b141a}
+.contacts-page-header{gap:12px}
+.contacts-import-top{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:0 0 auto;min-height:40px;padding:9px 13px;border:1px solid #2b514a;border-radius:11px;background:#13302b;color:#64e2bc;font-size:11px;font-weight:700;white-space:nowrap}
+.contacts-import-top .bi{font-size:15px}
+.contacts-page-body{max-width:860px}
+.contacts-privacy-note{display:flex;align-items:flex-start;gap:12px;margin-bottom:17px;padding:13px 15px;border:1px solid #2a4448;border-radius:13px;background:#102329;color:#96b0b6}
+.contacts-privacy-note>.bi{margin-top:2px;color:#4fd6ad;font-size:16px}
+.contacts-privacy-note p{margin:0!important;font-size:11px!important;line-height:1.65!important}
+.contacts-privacy-note strong{color:#d3e5e3}
+.contacts-search-wrap{display:flex;align-items:center;gap:10px;height:43px;margin-bottom:12px;padding:0 13px;border:1px solid #293f47;border-radius:12px;background:#17262d;color:#829aa2}
+.contacts-search-wrap .bi{font-size:15px}
+.contacts-search-wrap input{width:100%;border:0;outline:0;background:transparent;color:#e9edef;font-size:12px}
+.contacts-list{display:flex;flex-direction:column;gap:2px}
+.contact-row{display:flex;align-items:center;gap:13px;min-height:71px;padding:9px 12px;border-bottom:1px solid #1d3037;border-radius:9px}
+.contact-row:hover{background:#13252b}
+.contact-row .contact-avatar{width:47px;height:47px;flex:0 0 47px;font-size:14px}
+.contact-row-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}
+.contact-row-copy strong{overflow:hidden;color:#e7edef;font-size:13px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.contact-row-copy span{overflow:hidden;color:#8da4ac;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.contact-action{display:inline-flex;align-items:center;justify-content:center;min-width:69px;min-height:34px;padding:7px 11px;border:1px solid #2c544a;border-radius:10px;background:#13302a;color:#5fe0b6;font-size:10px;font-weight:750;white-space:nowrap}
+.contact-action:disabled{border-color:#2d4147;background:#172329;color:#82969d;opacity:1}
+.contact-action.invite-action{border-color:#2c454e;background:#17262d;color:#d0e0e4}
+.contacts-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:250px;padding:30px 18px;text-align:center}
+.contacts-empty>.bi{display:grid;place-items:center;width:64px;height:64px;border-radius:21px;background:#18322f;color:#4dd6ad;font-size:29px}
+.contacts-empty strong{color:#e3ecee;font-size:16px}
+.contacts-empty p{max-width:390px;margin:0!important;color:#8da4ac;font-size:11px!important;line-height:1.7!important}
+.contacts-empty .primary{min-width:148px;min-height:40px;padding:10px 16px;border-radius:10px;font-size:11px;font-weight:750}
+.contacts-note{margin:0 0 8px;padding:3px 12px;color:#89a7ae;font-size:10px}
+.user-profile-page{background:#0b141a}
+.user-profile-body{max-width:720px}
+.user-profile-hero{display:flex;flex-direction:column;align-items:center;padding:34px 16px 30px;margin-bottom:16px;border:1px solid #243d43;border-radius:18px;background:linear-gradient(145deg,#13282d,#111b21 72%);text-align:center}
+.user-profile-hero .profile-avatar-large{width:120px;height:120px;flex-basis:120px;margin-bottom:17px;font-size:42px}
+.user-profile-hero h1{margin:0 0 7px;color:#e9edef;font-size:25px;font-weight:750;overflow-wrap:anywhere}
+.user-profile-hero>p{margin:0 0 12px!important;color:#43d4a9;font-size:13px!important}
+.user-profile-presence{display:flex;align-items:center;gap:7px;color:#91aab0;font-size:10px}
+.user-profile-presence .connection-dot{position:static;width:8px;height:8px;flex:0 0 8px}
+.user-profile-presence .connection-dot.online{background:#25d366;box-shadow:0 0 0 3px #25d36620}
+.user-profile-detail{padding:17px 19px;margin-bottom:12px;border:1px solid #243941;border-radius:13px;background:#111c22}
+.user-profile-detail>span{display:block;margin-bottom:7px;color:#4fd6ad;font-size:10px;font-weight:750;letter-spacing:.25px}
+.user-profile-detail p{margin:0!important;color:#dce6e8;font-size:13px!important;line-height:1.6!important;overflow-wrap:anywhere;white-space:pre-wrap}
+.user-profile-actions{display:flex;gap:10px;margin-top:18px}
+.user-profile-actions .primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:44px;border-radius:11px;font-size:12px;font-weight:750}
+.user-profile-actions .primary:disabled{background:#24383d;color:#93a7ad;opacity:1}
+.user-profile-actions .text-action{min-width:92px;min-height:44px;padding:10px 17px;border:1px solid #30464e;border-radius:11px;color:#c0d2d6;font-size:12px;font-weight:650}
+@media(max-width:720px){
+  .contacts-page-header{gap:9px}
+  .contacts-page-heading{min-width:0}
+  .contacts-import-top{min-height:39px;padding:8px 10px;font-size:10px}
+  .contacts-import-top span{display:none}
+  .contacts-page-body{padding:12px 10px calc(20px + env(safe-area-inset-bottom))}
+  .contacts-privacy-note{padding:10px 11px;gap:9px}
+  .contacts-privacy-note p{font-size:10px!important}
+  .contact-row{gap:10px;min-height:66px;padding:8px 6px}
+  .contact-row .contact-avatar{width:43px;height:43px;flex-basis:43px}
+  .contact-row-copy strong{font-size:12px}
+  .contact-action{min-width:62px;min-height:33px;padding:6px 8px;font-size:9px}
+  .user-profile-body{padding:12px 10px calc(20px + env(safe-area-inset-bottom))}
+  .user-profile-hero{padding:26px 12px 23px}
+  .user-profile-hero .profile-avatar-large{width:104px;height:104px;flex-basis:104px}
+  .user-profile-hero h1{font-size:22px}
+  .user-profile-actions .text-action{min-width:75px}
+}
+@media(max-width:380px){
+  .contacts-import-top{min-width:38px;width:38px;padding:8px;overflow:hidden}
+  .contact-row{gap:7px;padding-inline:2px}
+  .contact-action{min-width:57px;padding-inline:6px}
+}
+/* Compact the conversation list while keeping comfortable touch targets. */
+@media(min-width:721px){
+  .chatitem{min-height:69px;padding:9px 12px}
+  .chatitem .chatavatar{width:46px;height:46px}
+  .chatrow strong{font-size:12px}
+  .lastmsg{margin-top:3px;font-size:10px}
+}
+@media(max-width:720px){
+  .inboxhead{padding:15px 14px 11px}
+  .inbox-title h1{font-size:21px}
+  .searchwrap{margin:0 12px 9px}
+  .filterrow{padding:0 12px 9px}
+  .chatitem{min-height:68px;padding:9px 8px}
+  .chatitem .chatavatar{width:44px;height:44px}
+  .lastmsg{margin-top:3px}
+  .mobile-bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+}

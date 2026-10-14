@@ -80,7 +80,15 @@
     if (validAvatarSource(photo)) {
       element.classList.add('has-photo');
       const image = document.createElement('img');
-      image.src = photo; image.alt = nameOf(person) + ' profile photo';
+      image.alt = nameOf(person) + ' profile photo';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.addEventListener('error', () => {
+        image.remove();
+        element.classList.remove('has-photo');
+        element.prepend(document.createTextNode(nameOf(person).slice(0, 1).toUpperCase()));
+      }, { once: true });
+      image.src = photo;
       element.appendChild(image);
     } else {
       element.classList.remove('has-photo');
@@ -693,8 +701,31 @@
       if (error?.message === 'ENCRYPTION_SETUP_REQUIRED') toast('Encryption setup is incomplete.');
     });
     enableMediaControls();
-    socket.on('session:ready', (data) => { onlineUsers = Array.isArray(data?.onlineUsers) ? data.onlineUsers : []; setConnected(true); renderChats(); });
-    socket.on('presence:list', (users) => { onlineUsers = Array.isArray(users) ? users : []; setConnected(true); renderChats(); });
+    const updatePresence = (users) => {
+      onlineUsers = Array.isArray(users) ? users : [];
+      const byId = new Map(onlineUsers.filter((item) => item?.id).map((item) => [item.id, item]));
+      for (const [id, chat] of chats) {
+        const person = byId.get(id);
+        if (!person) continue;
+        chat.peer = Object.assign({}, chat.peer, {
+          username: person.username || chat.peer.username,
+          display_name: person.display_name || chat.peer.display_name,
+          avatar_url: Object.hasOwn(person, 'avatar_url') ? person.avatar_url : chat.peer.avatar_url,
+          bio: Object.hasOwn(person, 'bio') ? person.bio : chat.peer.bio
+        });
+        chats.set(id, chat);
+        if (activePeer?.id === id) {
+          activePeer = Object.assign({}, activePeer, chat.peer);
+          $('#activeName').textContent = nameOf(activePeer);
+          setAvatar($('#activeAvatar'), activePeer);
+          $('#activeStatus').title = activePeer.bio || '';
+        }
+      }
+      setConnected(true);
+      renderChats();
+    };
+    socket.on('session:ready', (data) => updatePresence(data?.onlineUsers));
+    socket.on('presence:list', updatePresence);
     socket.on('chat:error', (data) => toast(data?.message || 'Chat error.'));
     socket.on('chat:history', async (data) => {
       if (!data?.peer || !Array.isArray(data.messages) || activePeer?.id !== data.peer.id) return;
@@ -1379,10 +1410,22 @@
   function updateProfileAvatarPreview() {
     const target = $('#profileAvatarPreview');
     target.replaceChildren();
-    if (draftAvatarUrl) {
-      const image = document.createElement('img'); image.src = draftAvatarUrl; image.alt = 'Profile photo preview';
+    if (draftAvatarUrl && validAvatarSource(draftAvatarUrl)) {
+      const image = document.createElement('img');
+      image.src = draftAvatarUrl;
+      image.alt = 'Profile photo preview';
+      image.addEventListener('error', () => {
+        image.remove();
+        target.textContent = nameOf(profile).slice(0, 1).toUpperCase();
+      }, { once: true });
       target.appendChild(image);
     } else target.textContent = nameOf(profile).slice(0, 1).toUpperCase();
+  }
+  function updateProfileSummary() {
+    $('#profileSummaryName').textContent = nameOf(profile);
+    $('#profileSummaryUsername').textContent = '@' + (profile?.username || '');
+    $('#profileSummaryAbout').textContent = profile?.bio || 'Hey there! I am using FB Chat.';
+    $('#profileAccountEmail').textContent = me?.email || '';
   }
   function closeProfileDialog() { $('#profileModal').hidden = true; }
   async function profileDialog() {
@@ -1397,9 +1440,12 @@
     $('#profileSaveButton').disabled = false;
     $('#profileSaveButton').textContent = 'Save changes';
     updateProfileAvatarPreview();
+    updateProfileSummary();
     $('#genericModal').hidden = true;
     $('#profileModal').hidden = false;
-    $('#profileNameInput').focus();
+    $('#profileModal').scrollTop = 0;
+    await renderProfileSettings();
+    $('#profileClose').focus();
   }
   async function resizeProfilePhoto(file) {
     if (!file || !/^image\/(?:jpeg|png|webp)$/i.test(file.type)) throw new Error('Choose a JPG, PNG or WebP image.');
@@ -1438,6 +1484,7 @@
         body: JSON.stringify({ username, display_name: displayName, bio, avatar_url: avatar })
       });
       profile = Object.assign({}, profile, data.profile);
+      updateProfileSummary();
       $('#profileButton').title = nameOf(profile) + ' · profile';
       setAvatar($('#profileButton'), profile);
       $('#profileButton').setAttribute('aria-label', nameOf(profile) + ' profile');
@@ -1535,98 +1582,193 @@
       ]);
   }
 
-  async function settingsDialog() {
+  function addProfileSettingsGroup(root, title) {
+    const group = document.createElement('section');
+    group.className = 'profile-settings-group';
+    const heading = document.createElement('h4');
+    heading.textContent = title;
+    group.appendChild(heading);
+    root.appendChild(group);
+    return group;
+  }
+  function appendProfileSettingRow(group, icon, title, description, control) {
+    const row = document.createElement('div');
+    row.className = 'profile-setting-row';
+    const symbol = document.createElement('span');
+    symbol.className = 'profile-setting-icon';
+    const iconElement = document.createElement('i');
+    iconElement.className = 'bi ' + icon;
+    iconElement.setAttribute('aria-hidden', 'true');
+    symbol.appendChild(iconElement);
+    const copy = document.createElement('div');
+    copy.className = 'profile-setting-copy';
+    const label = document.createElement('strong');
+    label.textContent = title;
+    const detail = document.createElement('small');
+    detail.textContent = description;
+    copy.append(label, detail);
+    row.append(symbol, copy, control);
+    group.appendChild(row);
+    return row;
+  }
+  function profileSwitch(title, checked, status, action) {
+    const wrap = document.createElement('div');
+    wrap.className = 'profile-switch-wrap';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'profile-switch';
+    input.setAttribute('role', 'switch');
+    input.setAttribute('aria-label', title);
+    input.checked = Boolean(checked);
+    const state = document.createElement('small');
+    state.className = 'profile-setting-status';
+    state.textContent = status || '';
+    input.addEventListener('change', async () => {
+      const requested = input.checked;
+      input.disabled = true;
+      try {
+        const result = await action(requested);
+        if (result && typeof result.checked === 'boolean') input.checked = result.checked;
+        if (result?.status) state.textContent = result.status;
+      } catch (error) {
+        input.checked = !requested;
+        state.textContent = error?.message || 'Could not update this setting.';
+      } finally { input.disabled = false; }
+    });
+    wrap.append(input, state);
+    return wrap;
+  }
+  function profileSettingButton(label, action, icon = 'bi-chevron-right') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'profile-setting-button';
+    button.textContent = label;
+    const arrow = document.createElement('i');
+    arrow.className = 'bi ' + icon;
+    arrow.setAttribute('aria-hidden', 'true');
+    button.appendChild(arrow);
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try { await action(); }
+      catch (error) { toast(error?.message || 'Could not update this setting.'); }
+      finally { button.disabled = false; }
+    });
+    return button;
+  }
+  async function renderProfileSettings() {
+    const root = $('#profileSettingsContent');
+    if (!root) return;
+    root.replaceChildren();
+    if (!me) {
+      root.textContent = 'Sign in to manage your settings.';
+      return;
+    }
     const nativeApp = Boolean(window.FBChatNative);
     const soundOn = localStorage.getItem('fbchat-message-sound') !== 'off';
     const pushOn = localStorage.getItem('fbchat-push-enabled') === 'on';
-    const registered = Boolean(me && localStorage.getItem('fbchat-fcm-registered-' + me.id));
-    const [micState, cameraState] = await Promise.all([getMediaPermissionStatus('microphone'), getMediaPermissionStatus('camera')]);
-    const permissionToggle = (kind, label, state) => {
-      const saved = localStorage.getItem(callPermissionToggleKey(kind));
-      return {
-        type: 'toggle', label,
-        detail: 'Controls whether FB Chat may use this device feature for calls.',
-        status: permissionStatusText(kind, state),
-        checked: saved === 'on' || (saved == null && state === 'granted'),
-        action: async (enabled) => {
-          if (!enabled) {
-            localStorage.setItem(callPermissionToggleKey(kind), 'off');
-            return { checked: false, status: 'Disabled inside FB Chat. System permission is unchanged.' };
-          }
+    const registered = Boolean(localStorage.getItem('fbchat-fcm-registered-' + me.id));
+    const [micState, cameraState] = await Promise.all([
+      getMediaPermissionStatus('microphone'), getMediaPermissionStatus('camera')
+    ]);
+
+    const notifications = addProfileSettingsGroup(root, 'Notifications');
+    appendProfileSettingRow(
+      notifications, 'bi-bell-fill', 'Message sound',
+      'Play a short sound when a new message arrives.',
+      profileSwitch('Message sound', soundOn, soundOn ? 'Sound is on.' : 'Sound is off.', async (enabled) => {
+        localStorage.setItem('fbchat-message-sound', enabled ? 'on' : 'off');
+        toast(enabled ? 'Message sound turned on.' : 'Message sound turned off.');
+        return { checked: enabled, status: enabled ? 'Sound is on.' : 'Sound is off.' };
+      })
+    );
+    appendProfileSettingRow(
+      notifications, 'bi-bell', nativeApp ? 'Android notifications' : 'Push notifications',
+      nativeApp
+        ? (registered ? 'This Android device has a registered notification token.' : 'Allow alerts when FB Chat is in the background.')
+        : (pushOn ? 'Browser push notifications are enabled.' : 'Receive alerts when the browser is in the background.'),
+      profileSettingButton(nativeApp ? (registered ? 'Refresh' : 'Enable') : (pushOn ? 'Turn off' : 'Enable'), async () => {
+        if (nativeApp) {
           try {
-            await requestMediaPermission(kind);
-            localStorage.setItem(callPermissionToggleKey(kind), 'on');
-            return { checked: true, status: 'Device permission allowed.' };
-          } catch (error) {
-            localStorage.setItem(callPermissionToggleKey(kind), 'off');
-            const latest = await getMediaPermissionStatus(kind);
-            const status = latest === 'denied' || latest === 'not-granted'
-              ? 'Not allowed. Use device/browser settings if the system prompt no longer appears.'
-              : (error?.message || 'Permission was not granted.');
-            return { checked: false, status };
-          }
+            window.FBChatNative.requestNotificationPermission();
+            window.FBChatNative.refreshToken();
+            await syncNativePushToken();
+            toast('Android notification setup requested. Allow notifications in Android settings.', 5000);
+          } catch { toast('Open Android app settings and allow notifications.', 5000); }
+        } else if (pushOn) {
+          await disablePushNotifications();
+        } else {
+          await enablePushNotifications();
         }
-      };
+        await renderProfileSettings();
+      }, 'bi-chevron-right')
+    );
+
+    const calls = addProfileSettingsGroup(root, 'Calls');
+    const permissionRow = (kind, label, state) => {
+      const saved = localStorage.getItem(callPermissionToggleKey(kind));
+      const checked = saved === 'on' || (saved == null && state === 'granted');
+      return profileSwitch(label, checked, permissionStatusText(kind, state), async (enabled) => {
+        if (!enabled) {
+          localStorage.setItem(callPermissionToggleKey(kind), 'off');
+          return { checked: false, status: 'Disabled inside FB Chat. System permission is unchanged.' };
+        }
+        try {
+          await requestMediaPermission(kind);
+          localStorage.setItem(callPermissionToggleKey(kind), 'on');
+          const latest = await getMediaPermissionStatus(kind);
+          return { checked: true, status: permissionStatusText(kind, latest) };
+        } catch (error) {
+          localStorage.setItem(callPermissionToggleKey(kind), 'off');
+          const latest = await getMediaPermissionStatus(kind);
+          const status = latest === 'denied' || latest === 'not-granted'
+            ? 'Not allowed. Use device/browser settings if the system prompt no longer appears.'
+            : (error?.message || 'Permission was not granted.');
+          return { checked: false, status };
+        }
+      });
     };
-    const actions = [
-      permissionToggle('microphone', 'Microphone for voice calls', micState),
-      permissionToggle('camera', 'Camera for video calls', cameraState),
-      {
-        label: soundOn ? 'Turn message sound off' : 'Turn message sound on',
-        action: () => {
-          localStorage.setItem('fbchat-message-sound', soundOn ? 'off' : 'on');
-          $('#genericModal').hidden = true;
-          toast(soundOn ? 'Message sound turned off.' : 'Message sound turned on.');
-        }
-      },
-      {
-        label: nativeApp
-          ? (registered ? 'Refresh Android notifications' : 'Enable Android notifications')
-          : (pushOn ? 'Turn off push notifications' : 'Enable push notifications'),
-        action: async () => {
-          $('#genericModal').hidden = true;
-          if (nativeApp) {
-            try {
-              window.FBChatNative.requestNotificationPermission();
-              window.FBChatNative.refreshToken();
-              await syncNativePushToken();
-              toast('Android notification setup requested. Allow notifications in Android settings.', 5000);
-            } catch {
-              toast('Open Android app settings and allow notifications.', 5000);
-            }
-          } else if (pushOn) await disablePushNotifications();
-          else await enablePushNotifications();
-        }
-      },
-      ...(nativeApp ? [{
-        label: typeof window.FBChatNative.checkForAppUpdate === 'function' ? 'Check for app updates' : 'Download latest Android app',
-        action: () => {
+    appendProfileSettingRow(calls, 'bi-mic-fill', 'Microphone', 'Allow voice calls to use your microphone.',
+      permissionRow('microphone', 'Microphone', micState));
+    appendProfileSettingRow(calls, 'bi-camera-video-fill', 'Camera', 'Allow video calls to use your camera.',
+      permissionRow('camera', 'Camera', cameraState));
+
+    const privacy = addProfileSettingsGroup(root, 'Privacy & security');
+    appendProfileSettingRow(privacy, 'bi-shield-lock-fill', 'Encryption and privacy',
+      'Messages are encrypted on your device before they are sent.',
+      profileSettingButton('View details', () => infoModal(
+        'Privacy & encryption',
+        'Messages are encrypted in this browser using ECDH P-256 and AES-GCM. The database stores ciphertext. This prototype has not had an independent security audit.',
+        [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]
+      )));
+    if (nativeApp) {
+      const device = addProfileSettingsGroup(root, 'App & device');
+      appendProfileSettingRow(device, 'bi-arrow-down-circle-fill', 'App updates',
+        'Check whether a newer FB Chat Android app is available.',
+        profileSettingButton(typeof window.FBChatNative.checkForAppUpdate === 'function' ? 'Check now' : 'Download latest', () => {
           if (typeof window.FBChatNative.checkForAppUpdate !== 'function') {
             showLegacyAndroidUpdateDialog();
             return;
           }
-          $('#genericModal').hidden = true;
           nativeUpdateCheckManual = true;
           try {
-            if (typeof window.FBChatNative.checkForAppUpdateNow === 'function') {
-              window.FBChatNative.checkForAppUpdateNow();
-            } else {
-              // Older APKs do not expose the forced-check bridge yet.
-              window.FBChatNative.checkForAppUpdate();
-            }
-          } catch { nativeUpdateCheckManual = false; toast('Could not check for updates. Connect to the internet and retry.'); }
-        }
-      }, { label: 'Open Android app permissions', action: () => {
-        try { window.FBChatNative.openAppSettings(); }
-        catch { toast('Open Android Settings → Apps → FB Chat → Permissions.', 5000); }
-      }}] : []),
-      { label: 'Privacy & encryption details', action: () => { $('#genericModal').hidden = true; void securityDialog(); } },
-      { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
-    ];
-    const description = nativeApp
-      ? 'Use the switches below to enable or disable camera and microphone inside FB Chat. Android still controls device-level permissions; use Open Android app permissions to revoke them completely.'
-      : 'Use the switches below to allow camera and microphone inside FB Chat. Your browser controls site-level permission; to revoke it completely, open this site’s permissions in the browser.';
-    infoModal('Settings & permissions', description, actions);
+            if (typeof window.FBChatNative.checkForAppUpdateNow === 'function') window.FBChatNative.checkForAppUpdateNow();
+            else window.FBChatNative.checkForAppUpdate();
+          } catch {
+            nativeUpdateCheckManual = false;
+            toast('Could not check for updates. Connect to the internet and retry.');
+          }
+        }));
+      appendProfileSettingRow(device, 'bi-phone-fill', 'Android app permissions',
+        'Open device settings to manage FB Chat permissions.',
+        profileSettingButton('Open', () => {
+          try { window.FBChatNative.openAppSettings(); }
+          catch { toast('Open Android Settings → Apps → FB Chat → Permissions.', 5000); }
+        }));
+    }
+  }
+  async function settingsDialog() {
+    await profileDialog();
+    $('#profileSettingsSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   async function securityDialog() {
     if (!activePeer) {
@@ -1708,9 +1850,6 @@
     $('#profileButton').addEventListener('click', profileDialog);
     $('#mobileProfileButton').addEventListener('click', profileDialog);
     $('#profileClose').addEventListener('click', closeProfileDialog);
-    $('#profileModal').addEventListener('click', (event) => {
-      if (event.target === $('#profileModal')) closeProfileDialog();
-    });
     $('#profileForm').addEventListener('submit', saveProfile);
     $('#profileBioInput').addEventListener('input', () => {
       $('#profileBioCount').textContent = String($('#profileBioInput').value.length);
@@ -1729,13 +1868,16 @@
       } catch (error) { $('#profileSaveError').textContent = error.message || 'Could not use that photo.'; }
       finally { button.disabled = false; button.textContent = 'Change photo'; $('#profileAvatarFile').value = ''; }
     });
-    $('#profileSecurityButton').addEventListener('click', () => { closeProfileDialog(); void securityDialog(); });
+    $('#profileSecurityButton').addEventListener('click', () => infoModal(
+      'Privacy & encryption',
+      'Messages are encrypted in this browser using ECDH P-256 and AES-GCM. The database stores ciphertext. This prototype has not had an independent security audit.',
+      [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]
+    ));
     $('#profileSignOutButton').addEventListener('click', () => { closeProfileDialog(); void signOut(); });
     window.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && !$('#profileModal').hidden) closeProfileDialog();
     });
     $('#settingsButton').addEventListener('click', settingsDialog);
-    $('#mobileSettingsButton').addEventListener('click', settingsDialog);
     const bottomNavItems = $$('[data-bottom-nav]');
     const showMainSection = (section) => {
       bottomNavItems.forEach((item) => {
@@ -1751,7 +1893,7 @@
       }
       $('#app').classList.remove('chat-open');
       if (section === 'calls') { showCallHistory(); return; }
-      if (section === 'profile') { profileDialog(); return; }
+      if (section === 'profile') { void profileDialog(); return; }
       if (section === 'settings') { void settingsDialog(); return; }
     };
     bottomNavItems.forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.bottomNav)));

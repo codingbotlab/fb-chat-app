@@ -825,12 +825,16 @@
     $('#genericForm').hidden = false; $('#genericFoot').textContent = 'Both accounts must finish encryption setup before chatting.';
     $('#genericModal').hidden = false; $('#genericInput').focus();
   }
-  function closeUserProfile() {
+  let profileReturnToContacts = false;
+  function closeUserProfile(restoreContacts = true) {
     $('#userProfileModal').hidden = true;
     viewedPeer = null;
+    if (restoreContacts && profileReturnToContacts && me) $('#contactsModal').hidden = false;
+    profileReturnToContacts = false;
   }
   function openUserProfile(person) {
     if (!person?.id || person.id === me?.id) return;
+    profileReturnToContacts = !$('#contactsModal').hidden;
     viewedPeer = Object.assign({}, person);
     $('#userProfileName').textContent = nameOf(person);
     $('#userProfileUsername').textContent = person.username ? '@' + person.username : 'FB Chat member';
@@ -868,7 +872,7 @@
       toast('This user has not finished setting up secure chat yet.');
       return;
     }
-    closeUserProfile();
+    closeUserProfile(false);
     addChat(person);
     await openChat(person);
   }
@@ -1020,7 +1024,16 @@
     renderContactEntries();
     $('#contactsClose').focus();
   }
-  function closeContactsPage() { $('#contactsModal').hidden = true; }
+  function closeContactsPage() {
+    $('#contactsModal').hidden = true;
+    $('[data-bottom-nav]').forEach((item) => {
+      const active = item.dataset.bottomNav === 'chats';
+      item.classList.toggle('active', active);
+      if (active) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
+    $('[data-rail]').forEach((item) => item.classList.toggle('active', item.dataset.rail === 'chats'));
+  }
   function parseVCard(text) {
     const unfolded = String(text || '').replace(/\r?\n[ \t]/g, '');
     const cards = unfolded.split(/BEGIN:VCARD/i).slice(1);
@@ -1736,6 +1749,8 @@
     updateProfileAvatarPreview();
     updateProfileSummary();
     $('#genericModal').hidden = true;
+    $('#contactsModal').hidden = true;
+    $('#userProfileModal').hidden = true;
     $('#profileModal').hidden = false;
     $('#profileModal').scrollTop = 0;
     await renderProfileSettings();
@@ -2150,6 +2165,7 @@
     $('#contactsClose').addEventListener('click', closeContactsPage);
     $('#contactsImportButton').addEventListener('click', requestContactImport);
     $('#contactsFileInput').addEventListener('change', () => void importContactsFile($('#contactsFileInput').files?.[0]));
+    $('#contactsSearch').addEventListener('input', () => renderContactEntries());
     $('#contactsModal').addEventListener('click', (event) => { if (event.target === $('#contactsModal')) closeContactsPage(); });
     $('#userProfileModal').addEventListener('click', (event) => { if (event.target === $('#userProfileModal')) closeUserProfile(); });
     $('#profileButton').addEventListener('click', profileDialog);

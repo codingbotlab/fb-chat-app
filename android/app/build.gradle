@@ -16,8 +16,8 @@ android {
         applicationId 'com.codingbotlab.fbchat'
         minSdk 26
         targetSdk 34
-        versionCode 6
-        versionName '1.2.3'
+        versionCode 7
+        versionName '1.2.4'
     }
 
     if (stableKeystorePath && stableStorePassword && stableKeyAlias && stableKeyPassword) {

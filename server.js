@@ -118,7 +118,7 @@ function validUuid(value) {
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 function validAvatarDataUrl(value) {
-  return typeof value === 'string' && value.length <= 90_000 &&
+  return typeof value === 'string' && value.length <= 40_000 &&
     /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 }
 function validBio(value) {

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validBio, publicProfile } = require('../server');
 
 test('native FCM tokens are bounded and whitespace-free', () => {
   assert.equal(validFcmToken('f'.repeat(152)), true);
@@ -32,6 +32,23 @@ test('display names are bounded and reject markup delimiters', () => {
   assert.equal(validDisplayName('A'), false);
   assert.equal(validDisplayName('x'.repeat(41)), false);
   assert.equal(validDisplayName('<admin>'), false);
+});
+
+test('profile photo and about metadata are size-limited and safely exposed', () => {
+  assert.equal(validAvatarDataUrl('data:image/jpeg;base64,Zm9v'), true);
+  assert.equal(validAvatarDataUrl('data:image/svg+xml;base64,PHN2Zy8+'), false);
+  assert.equal(validAvatarDataUrl('https://example.test/photo.jpg'), false);
+  assert.equal(validAvatarDataUrl('data:image/png;base64,' + 'A'.repeat(40_100)), false);
+  assert.equal(validBio('Available for a chat'), true);
+  assert.equal(validBio('x'.repeat(161)), false);
+  assert.equal(validBio('<script>alert(1)</script>'), false);
+  const profile = publicProfile({
+    id: 'abc', username: 'maddy', display_name: 'Maddy', public_key: { kty: 'EC' },
+    key_backup: { ciphertext: 'secret' }, created_at: '2026-01-01'
+  }, { avatar_url: 'data:image/jpeg;base64,Zm9v', bio: 'Hello' });
+  assert.equal(profile.avatar_url, 'data:image/jpeg;base64,Zm9v');
+  assert.equal(profile.bio, 'Hello');
+  assert.equal(Object.hasOwn(profile, 'key_backup'), false);
 });
 
 test('encrypted message validation accepts ciphertext and 96-bit IV encoding', () => {
@@ -100,6 +117,41 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /encryptText|async function encryptText/);
   assert.match(js, /decryptText|async function decryptText/);
   assert.doesNotMatch(html + js, /Aarav Sharma|Sana Khan|Creators Club/);
+  for (const id of ['profileModal','profileForm','profileNameInput','profileUsernameInput','profileBioInput','profileAvatarFile','profileSaveButton','mobileProfileButton']) {
+    assert.match(html, new RegExp('id="' + id + '"'), 'missing profile control: ' + id);
+  }
+  assert.match(js, /async function saveProfile\(event\)/);
+  assert.match(js, /async function resizeProfilePhoto\(file\)/);
+  assert.match(js, /profile:refresh/);
+  assert.match(html, /styles\.css\?v=profile-admin-2/);
+  assert.doesNotMatch(html, /Administrator sign in|admin-chat\.fashionbazz\.in/i);
+});
+
+test('admin console is served at a separate page path and its APIs require authenticated admin access', async (t) => {
+  const srv = http.createServer(app);
+  await new Promise((resolve, reject) => {
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => new Promise((resolve) => srv.close(() => resolve())));
+  const base = 'http://127.0.0.1:' + srv.address().port;
+  const adminPage = await fetch(base + '/admin-chat');
+  assert.equal(adminPage.status, 200);
+  const adminHtml = await adminPage.text();
+  assert.match(adminHtml, /Administrator sign in/);
+  assert.match(adminHtml, /Message activity/);
+  const userPage = await fetch(base + '/');
+  assert.equal(userPage.status, 200);
+  const userHtml = await userPage.text();
+  assert.match(userHtml, /Edit profile/);
+  assert.doesNotMatch(userHtml, /Administrator sign in|Message activity/);
+  const adminConfig = await fetch(base + '/api/admin/config');
+  assert.equal(adminConfig.status, 200);
+  const config = await adminConfig.json();
+  assert.equal(typeof config.adminConfigured, 'boolean');
+  assert.equal(Object.hasOwn(config, 'supabaseServiceRoleKey'), false);
+  const protectedOverview = await fetch(base + '/api/admin/overview');
+  assert.notEqual(protectedOverview.status, 200);
 });
 
 test('PWA manifest and app icons satisfy install dimensions', () => {
@@ -174,7 +226,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v10/);
+  assert.match(sw, /fb-chat-shell-v11/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /Microphone for voice calls/);
   assert.match(js, /Camera for video calls/);
@@ -255,7 +307,7 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v10/);
+  assert.match(sw, /fb-chat-shell-v11/);
 });
 
 
@@ -311,7 +363,7 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="flipCameraButton"/);
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
-  assert.match(sw, /fb-chat-shell-v10/);
+  assert.match(sw, /fb-chat-shell-v11/);
 });
 
 

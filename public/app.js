@@ -836,7 +836,7 @@
     infoModal('Message options', 'Actions apply to this message. Starred and hidden-message settings are saved only on this device.', actions);
   }
 
-  let peerConnection = null, localStream = null, remoteMediaStream = null;
+  let peerConnection = null, localStream = null, remoteMediaStream = null, remoteVideoStream = null;
   let currentCallPeer = null, currentCallKind = 'audio', incomingCall = null;
   let pendingRemoteIceCandidates = [], callStartedAt = 0, callConnectedAt = 0;
   let callClockTimer = null, toneTimer = null, toneContext = null, toneNodes = [];
@@ -920,26 +920,37 @@
   function attachRemoteTrack(event) {
     if (!event?.track) return;
     if (!remoteMediaStream) remoteMediaStream = new MediaStream();
-    // Aggregate both audio and video even on WebView versions that omit event.streams.
+    if (!remoteVideoStream) remoteVideoStream = new MediaStream();
+    const addTrackOnce = (stream, track) => {
+      if (track && !stream.getTracks().some(item => item.id === track.id)) stream.addTrack(track);
+    };
+    // Keep media kinds on separate streams. The video element is muted on purpose; remote
+    // audio is played through its own audio element so Android autoplay never blocks video.
     for (const stream of (event.streams || [])) {
-      for (const track of stream.getTracks()) {
-        if (!remoteMediaStream.getTracks().some(item => item.id === track.id)) remoteMediaStream.addTrack(track);
-      }
+      for (const track of stream.getTracks()) addTrackOnce(
+        track.kind === 'video' ? remoteVideoStream : remoteMediaStream, track
+      );
     }
-    if (!remoteMediaStream.getTracks().some(item => item.id === event.track.id)) remoteMediaStream.addTrack(event.track);
+    addTrackOnce(event.track.kind === 'video' ? remoteVideoStream : remoteMediaStream, event.track);
     if (event.track.kind === 'video') {
       const video = $('#remoteCallVideo'), placeholder = $('#remoteCallPlaceholder');
-      video.srcObject = remoteMediaStream; video.hidden = false;
+      video.muted = true; video.autoplay = true; video.playsInline = true;
+      video.srcObject = remoteVideoStream; video.hidden = false;
       if (placeholder) placeholder.hidden = true;
-      event.track.onunmute = () => { video.hidden = false; if (placeholder) placeholder.hidden = true; playRemoteMedia(video); };
+      event.track.onunmute = () => {
+        video.hidden = false;
+        if (placeholder) placeholder.hidden = true;
+        playRemoteMedia(video);
+        callStatus('Remote video playing');
+      };
       event.track.onmute = () => {
         if (placeholder && !isCameraDisabled) {
-          placeholder.textContent = 'The other camera is paused';
+          const title = placeholder.querySelector('strong');
+          if (title) title.textContent = 'The other camera is paused';
           placeholder.hidden = false;
         }
       };
       playRemoteMedia(video);
-      callStatus('Receiving video…');
     } else if (event.track.kind === 'audio') {
       const audio = $('#remoteCallAudio');
       audio.srcObject = remoteMediaStream; audio.muted = false; audio.volume = 1;
@@ -1022,7 +1033,7 @@
   }
   function setupPeerConnection() {
     peerConnection = new RTCPeerConnection(rtcConfig);
-    remoteMediaStream = new MediaStream(); pendingRemoteIceCandidates = [];
+    remoteMediaStream = new MediaStream(); remoteVideoStream = new MediaStream(); pendingRemoteIceCandidates = [];
     peerConnection.ontrack = attachRemoteTrack;
     peerConnection.onicecandidate = event => {
       if (event.candidate && currentCallPeer && socket?.connected)
@@ -1155,7 +1166,7 @@
     try { peerConnection?.close(); } catch {}
     peerConnection = null;
     if (localStream) localStream.getTracks().forEach(track => track.stop());
-    localStream = null; remoteMediaStream = null; pendingRemoteIceCandidates = [];
+    localStream = null; remoteMediaStream = null; remoteVideoStream = null; pendingRemoteIceCandidates = [];
     ['localCallVideo','remoteCallVideo','remoteCallAudio'].forEach(id => { const el = $('#'+id); if (el) { try { el.pause?.(); } catch {} el.srcObject = null; } });
     $('#remoteCallVideo').hidden = true; $('#remoteCallPlaceholder').hidden = true; $('#callTimer').hidden = true;
     currentCallPeer = null; incomingCall = null; callStartedAt = 0; callConnectedAt = 0;

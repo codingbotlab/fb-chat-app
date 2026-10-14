@@ -12,6 +12,7 @@
   let nativeFcmToken = '';
   let onlineUsers = [], chats = new Map(), histories = new Map(), unread = new Map();
   let busy = false, toastTimer = null, typingTimer = null, changedFingerprint = null, replyTarget = null;
+  let chatOpenRequest = 0;
 
   const norm = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const to64 = (buffer) => {
@@ -562,6 +563,7 @@
   }
   async function openChat(person) {
     if (!person || person.id === me?.id || !person.public_key) { toast('This person has not finished encryption setup.'); return; }
+    const requestId = ++chatOpenRequest;
     activePeer = person; changedFingerprint = null; unread.set(person.id, 0);
     $('#welcome').hidden = true; $('#convHead').hidden = false; $('#messages').hidden = false; $('#composerWrap').hidden = false;
     $('#activeName').textContent = nameOf(person); $('#activeAvatar').textContent = nameOf(person).slice(0, 1).toUpperCase();
@@ -569,6 +571,7 @@
     $('#app').classList.add('chat-open'); renderChats();
     try {
       const trust = await checkPeerKey(person);
+      if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
       if (!trust.trusted) {
         changedFingerprint = trust.fingerprint; $('#chatDetails').dataset.keyChanged = 'true'; $('#composerWrap').hidden = true;
         $('#activeStatus').textContent = 'Security warning · key changed'; $('#messages').replaceChildren();
@@ -578,18 +581,20 @@
       }
       $('#chatDetails').dataset.keyChanged = 'false';
       const data = await api('/api/chats/' + encodeURIComponent(person.username) + '/messages');
+      if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
       addChat(data.peer);
       const history = [];
       for (const message of data.messages || []) {
         const decoded = decodeMessageContent(await decryptText(message, person));
         history.push(Object.assign({}, message, decoded));
       }
+      if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
       histories.set(person.id, history);
       const last = history[history.length - 1], entry = chats.get(person.id);
       if (entry && last) entry.lastMessage = Object.assign({}, last, { preview: last.plaintext || '🔒 Encrypted message' });
       renderHistory(person.id); renderChats();
       if (socket?.connected) { socket.emit('chat:open', { peer: person.username }); socket.emit('chat:read', { peer: person.username }); }
-    } catch (error) { toast(error.message || 'Could not load this conversation.'); }
+    } catch (error) { if (requestId === chatOpenRequest && activePeer?.id === person.id) toast(error.message || 'Could not load this conversation.'); }
   }
   async function loadChats() {
     const data = await api('/api/chats'); chats = new Map();
@@ -817,6 +822,77 @@
   const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
   function callStatus(text) { const el = $('#callStatus'); if (el) el.textContent = text; }
   function showCallUi(show) { $('#callOverlay').hidden = !show; }
+  function withMediaStage(error, stage) {
+    const wrapped = new Error(error?.message || (stage === 'camera' ? 'Camera could not start.' : 'Microphone could not start.'));
+    wrapped.name = error?.name || 'Error';
+    wrapped.mediaStage = stage;
+    return wrapped;
+  }
+  async function acquireCallMedia(kind) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Camera/microphone access is unavailable here. Update FB Chat or open the HTTPS site in Chrome.');
+    }
+    let stream;
+    const audioConstraints = {
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: true }
+    };
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
+    } catch (firstError) {
+      const retryable = ['NotFoundError', 'NotReadableError', 'OverconstrainedError', 'AbortError'].includes(firstError?.name)
+        || /audio source not found|requested device not found/i.test(String(firstError?.message || ''));
+      if (!retryable) throw withMediaStage(firstError, 'microphone');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      try {
+        // Some Android WebView audio drivers reject enhanced constraints; retry with the default mic.
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      } catch (retryError) {
+        throw withMediaStage(retryError, 'microphone');
+      }
+    }
+    if (kind !== 'video') return stream;
+    try {
+      // Request the camera separately so Android WebView can authorize each source independently.
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'user' }, width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      const tracks = cameraStream.getVideoTracks();
+      if (!tracks.length) throw new Error('No camera track was returned by Android.');
+      tracks.forEach((track) => stream.addTrack(track));
+      cameraStream.getAudioTracks().forEach((track) => track.stop());
+      return stream;
+    } catch (error) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw withMediaStage(error, 'camera');
+    }
+  }
+  function callMediaErrorMessage(error) {
+    const detail = String(error?.message || '').toLowerCase();
+    const stage = error?.mediaStage || 'microphone';
+    if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+      return stage === 'camera'
+        ? 'Camera access was denied. Allow Camera for FB Chat in Android Settings > Apps > FB Chat > Permissions.'
+        : 'Microphone access was denied. Allow Microphone for FB Chat in Android Settings > Apps > FB Chat > Permissions.';
+    }
+    if (stage === 'camera' && (error?.name === 'NotFoundError' || /camera.*not found|no camera/i.test(detail))) {
+      return 'Android cannot find a camera source. Check the tablet camera and allow Camera in FB Chat permissions.';
+    }
+    if (error?.name === 'NotFoundError' || /audio source not found|requested device not found|no audio device/i.test(detail)) {
+      return 'Android is not exposing a microphone source to FB Chat. Check Settings > Apps > FB Chat > Permissions > Microphone, turn off any system-wide microphone privacy switch, and close other apps using the mic.';
+    }
+    if (error?.name === 'NotReadableError' || error?.name === 'AbortError') {
+      return stage === 'camera'
+        ? 'The camera is detected but cannot start. Close Camera or other video-call apps, then try again.'
+        : 'The microphone is detected but cannot start. Close Recorder, Camera or other call apps, check the tablet microphone privacy switch, then try again.';
+    }
+    if (error?.name === 'OverconstrainedError') {
+      return 'The tablet rejected the media settings. Disconnect external audio devices and retry with the tablet built-in microphone/camera.';
+    }
+    return error?.message || 'Could not access the camera or microphone. Check Android permissions and try again.';
+  }
   async function startCall(kind) {
     if (!activePeer || !socket?.connected) return toast('Open a chat and connect before calling.');
     if (localStorage.getItem(callPermissionToggleKey('microphone')) === 'off') return toast('Microphone is disabled in Settings. Enable it before calling.', 4500);
@@ -824,7 +900,7 @@
     if (peerConnection) return toast('A call is already active.');
     currentCallPeer = activePeer.username; currentCallKind = kind === 'video' ? 'video' : 'audio';
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: currentCallKind === 'video' });
+      localStream = await acquireCallMedia(currentCallKind);
       $('#localCallVideo').srcObject = localStream;
       $('#localCallVideo').hidden = currentCallKind !== 'video';
       $('#remoteCallVideo').hidden = currentCallKind !== 'video';
@@ -847,7 +923,7 @@
       callStatus('Calling…'); socket.emit('call:invite', { to: currentCallPeer, kind: currentCallKind });
       const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer);
       socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription } });
-    } catch (error) { endCall(false); toast(error.name === 'NotAllowedError' ? 'Allow camera and microphone permission to call.' : (error.message || 'Could not start call.')); }
+    } catch (error) { endCall(false); toast(callMediaErrorMessage(error)); }
   }
   async function acceptIncomingCall() {
     if (!incomingCall || !socket?.connected) return;
@@ -861,7 +937,7 @@
     }
     const call = incomingCall; incomingCall = null; currentCallPeer = call.from; currentCallKind = call.kind;
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: currentCallKind === 'video' });
+      localStream = await acquireCallMedia(currentCallKind);
       $('#localCallVideo').srcObject = localStream; $('#localCallVideo').hidden = currentCallKind !== 'video';
       $('#remoteCallVideo').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').hidden = true;
       peerConnection = new RTCPeerConnection(rtcConfig);
@@ -878,7 +954,7 @@
       for (const candidate of (call.candidates || [])) { try { await peerConnection.addIceCandidate(candidate); } catch {} }
       const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
       socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription } });
-    } catch (error) { endCall(true); toast(error.message || 'Could not accept call.'); }
+    } catch (error) { endCall(true); toast(callMediaErrorMessage(error)); }
   }
   async function handleCallSignal(data) {
     if (!peerConnection || data.from !== currentCallPeer || !data.signal) return;
@@ -1180,7 +1256,7 @@
     $$('[data-filter]').forEach((button) => button.addEventListener('click', () => {
       $$('[data-filter]').forEach((item) => item.classList.toggle('active', item === button)); renderChats();
     }));
-    $('#backToChats').addEventListener('click', () => $('#app').classList.remove('chat-open'));
+    $('#backToChats').addEventListener('click', () => { chatOpenRequest++; $('#app').classList.remove('chat-open'); });
     $('#composeForm').addEventListener('submit', sendMessage);
     $('#attachMediaButton')?.addEventListener('click', () => $('#mediaInput')?.click());
     $('#mediaInput')?.addEventListener('change', () => {

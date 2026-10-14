@@ -1750,13 +1750,9 @@
         return;
       }
       $('#app').classList.remove('chat-open');
-      const screens = {
-        updates: ['Updates', 'Status updates and channels will appear here. Status sharing is not available yet.'],
-        communities: ['Communities', 'Your community announcements and group conversations will appear here. Communities are not available yet.']
-      };
       if (section === 'calls') { showCallHistory(); return; }
-      const screen = screens[section];
-      if (screen) infoModal(screen[0], screen[1], [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
+      if (section === 'profile') { profileDialog(); return; }
+      if (section === 'settings') { void settingsDialog(); return; }
     };
     bottomNavItems.forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.bottomNav)));
     $$('[data-rail]').forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.rail)));

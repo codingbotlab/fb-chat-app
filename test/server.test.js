@@ -141,6 +141,18 @@ test('admin console is served at a separate page path and its APIs require authe
   const adminHtml = await adminPage.text();
   assert.match(adminHtml, /Administrator sign in/);
   assert.match(adminHtml, /Message activity/);
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const adminJs = fs.readFileSync(path.join(root, 'admin', 'admin.js'), 'utf8');
+  const serverJs = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  assert.match(adminJs, /fetch\('\/api\/admin\/login'/);
+  assert.match(adminJs, /admin_token/);
+  assert.doesNotMatch(adminJs, /auth\/v1\/token\?grant_type=password/);
+  assert.match(serverJs, /function signAdminSession/);
+  assert.match(serverJs, /function requireAdminSession/);
+  assert.match(serverJs, /ADMIN_SESSION_TTL_SECONDS = 8 \* 60 \* 60/);
+  assert.match(serverJs, /app\.use\('\/api\/admin', requireAdminSession\)/);
   const userPage = await fetch(base + '/');
   assert.equal(userPage.status, 200);
   const userHtml = await userPage.text();

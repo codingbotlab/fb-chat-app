@@ -105,6 +105,12 @@
   }
   document.addEventListener('DOMContentLoaded', () => {
     $('#showQrLogin')?.addEventListener('click', startPcPairing);
+    $('#scanQrDeviceButton')?.addEventListener('click', () => {
+      closeModal(); modal().hidden = false;
+      $('#qrPairCanvas').hidden = true; $('#qrPairVideo').hidden = true;
+      $('#qrPairStartCamera').hidden = false;
+      status('Scan the one-time QR code shown on your PC.');
+    });
     $('#scanQrLogin')?.addEventListener('click', () => {
       closeModal(); modal().hidden = false;
       $('#qrPairCanvas').hidden = true; $('#qrPairVideo').hidden = true;

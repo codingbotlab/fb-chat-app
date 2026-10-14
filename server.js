@@ -37,6 +37,9 @@ const USERNAME_RE = /^[a-z0-9_.]{3,24}$/;
 const MAX_CIPHERTEXT_BYTES = 65_536;
 const FCM_PROJECT_ID = String(process.env.FCM_PROJECT_ID || '').trim();
 const FCM_SERVICE_ACCOUNT_JSON = String(process.env.FCM_SERVICE_ACCOUNT_JSON || '');
+const ADMIN_HOST = 'admin-chat.fashionbazz.in';
+const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || '')
+  .split(',').map((value) => normalize(value)).filter(Boolean));
 let fcmMessaging = null;
 if (FCM_SERVICE_ACCOUNT_JSON) {
   try {
@@ -114,12 +117,102 @@ function validUuid(value) {
   return typeof value === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
-function publicProfile(row) {
+function validAvatarDataUrl(value) {
+  return typeof value === 'string' && value.length <= 90_000 &&
+    /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
+}
+function validBio(value) {
+  return typeof value === 'string' && value.trim().length <= 160 &&
+    !/[<>]/.test(value);
+}
+function safeProfileMetadata(metadata = {}) {
+  return {
+    avatar_url: validAvatarDataUrl(metadata.avatar_url) ? metadata.avatar_url : null,
+    bio: typeof metadata.bio === 'string' && metadata.bio.length <= 160 ? metadata.bio : ''
+  };
+}
+function publicProfile(row, metadata = {}) {
   if (!row) return null;
+  const details = safeProfileMetadata(metadata);
   return {
     id: row.id, username: row.username, display_name: row.display_name,
-    public_key: row.public_key || null, created_at: row.created_at
+    public_key: row.public_key || null, created_at: row.created_at,
+    avatar_url: details.avatar_url, bio: details.bio
   };
+}
+function requestHost(req) {
+  return String(req.headers.host || '').split(':')[0].toLowerCase();
+}
+function requireAdminHost(req, res, next) {
+  if (requestHost(req) !== ADMIN_HOST) return res.status(404).json({ error: 'NOT_FOUND' });
+  next();
+}
+async function fetchAuthUsers(page = 1, perPage = 1000) {
+  const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users?page=' + page + '&per_page=' + perPage, {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY,
+      Accept: 'application/json'
+    },
+    signal: AbortSignal.timeout(12_000)
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw appError(503, 'AUTH_ADMIN_UNAVAILABLE', 'Could not read account directory from authentication storage.');
+  return Array.isArray(body.users) ? body.users : [];
+}
+async function getAuthUserById(id) {
+  if (!validUuid(id)) return null;
+  const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(id), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY,
+      Accept: 'application/json'
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) return null;
+  return response.json().catch(() => null);
+}
+async function updateAuthUserMetadata(user, metadata) {
+  const nextMetadata = Object.assign({}, user?.user_metadata || {}, metadata);
+  const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(user.id), {
+    method: 'PUT',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({ user_metadata: nextMetadata }),
+    signal: AbortSignal.timeout(10_000)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw appError(503, 'PROFILE_METADATA_SAVE_FAILED',
+    'The profile name was saved, but its photo/about details could not be saved. Please retry.');
+  return result;
+}
+async function exactCount(table) {
+  requireConfigured();
+  const response = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?select=id', {
+    method: 'HEAD',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY,
+      Prefer: 'count=exact',
+      Range: '0-0'
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) throw appError(503, 'DATABASE_COUNT_FAILED', 'Could not count records in ' + table + '.');
+  const match = String(response.headers.get('content-range') || '').match(/\/(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+async function requireAdminRole(req, res, next) {
+  const email = normalize(req.authUser?.email);
+  if (!email || !ADMIN_EMAILS.has(email)) {
+    return res.status(403).json({ error: 'ADMIN_REQUIRED', message: 'This email is not on the FB Chat admin allowlist.' });
+  }
+  next();
 }
 function appError(status, code, message) {
   const error = new Error(message);
@@ -316,6 +409,31 @@ app.get('/api/config', (_req, res) => res.json({
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
+app.get('/api/admin/config', requireAdminHost, (_req, res) => res.json({
+  configured,
+  adminConfigured: ADMIN_EMAILS.size > 0,
+  supabaseUrl: configured ? SUPABASE_URL : null,
+  supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
+}));
+app.get('/', (req, res, next) => {
+  if (requestHost(req) === ADMIN_HOST) {
+    return res.sendFile(path.join(__dirname, 'admin', 'index.html'));
+  }
+  next();
+});
+app.get('/__admin_assets/admin.css', requireAdminHost, (_req, res) =>
+  res.sendFile(path.join(__dirname, 'admin', 'admin.css')));
+app.get('/__admin_assets/admin.js', requireAdminHost, (_req, res) =>
+  res.sendFile(path.join(__dirname, 'admin', 'admin.js')));
+app.use((req, res, next) => {
+  if (requestHost(req) === ADMIN_HOST) {
+    return res.status(404).type('text/plain').send('Not found');
+  }
+  if (req.path.startsWith('/api/admin') || req.path.startsWith('/__admin_assets/')) {
+    return res.status(404).json({ error: 'NOT_FOUND' });
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: 0, index: 'index.html' }));
 
 app.post('/api/push/subscribe', requireAuth, async (req, res, next) => {
@@ -397,15 +515,20 @@ app.delete('/api/fcm/register', requireAuth, async (req, res, next) => {
 
 app.get('/api/me', requireAuth, (req, res) => res.json({
   user: { id: req.authUser.id, email: req.authUser.email || null },
-  profile: publicProfile(req.profile),
+  profile: publicProfile(req.profile, req.authUser.user_metadata),
   key_backup: req.profile.key_backup || null
 }));
 app.post('/api/profile', requireAuth, async (req, res, next) => {
   try {
     const username = normalize(req.body?.username);
     const displayName = String(req.body?.display_name || '').trim();
+    const bio = String(req.body?.bio || '').trim();
+    const avatarUrl = req.body?.avatar_url === '' || req.body?.avatar_url == null
+      ? null : req.body.avatar_url;
     if (!validUsername(username)) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Username must be 3–24 letters, numbers, dots or underscores.' });
     if (!validDisplayName(displayName)) return res.status(400).json({ error: 'INVALID_DISPLAY_NAME', message: 'Display name must be 2–40 characters.' });
+    if (!validBio(bio)) return res.status(400).json({ error: 'INVALID_BIO', message: 'About must be 160 characters or fewer.' });
+    if (avatarUrl !== null && !validAvatarDataUrl(avatarUrl)) return res.status(400).json({ error: 'INVALID_AVATAR', message: 'Use a PNG, JPEG or WebP profile image under the supported size limit.' });
     if (req.profile.username !== username) {
       const existing = await getProfileByUsername(username);
       if (existing && existing.id !== req.authUser.id) return res.status(409).json({ error: 'USERNAME_TAKEN', message: 'That username is already taken.' });
@@ -414,7 +537,13 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
       method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
       body: [{ id: req.authUser.id, username, display_name: displayName }]
     });
-    res.json({ profile: publicProfile(rows?.[0] || await getProfileById(req.authUser.id)) });
+    const metadataUser = await updateAuthUserMetadata(req.authUser, {
+      username, display_name: displayName, bio, avatar_url: avatarUrl
+    });
+    res.json({ profile: publicProfile(
+      rows?.[0] || await getProfileById(req.authUser.id),
+      metadataUser.user_metadata || { username, display_name: displayName, bio, avatar_url: avatarUrl }
+    ) });
   } catch (error) { next(error); }
 });
 app.put('/api/me/crypto', requireAuth, async (req, res, next) => {
@@ -444,7 +573,8 @@ app.get('/api/users/:username', requireAuth, async (req, res, next) => {
     if (!person) return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'No account found with that username.' });
     if (person.id === req.authUser.id) return res.status(400).json({ error: 'SELF_CHAT', message: 'Choose a different username.' });
     if (!person.public_key) return res.status(409).json({ error: 'KEY_NOT_READY', message: 'This user has not finished encryption setup.' });
-    res.json({ profile: publicProfile(person) });
+    const authPerson = await getAuthUserById(person.id);
+    res.json({ profile: publicProfile(person, authPerson?.user_metadata || {}) });
   } catch (error) { next(error); }
 });
 app.get('/api/chats', requireAuth, async (req, res, next) => {
@@ -483,7 +613,8 @@ app.get('/api/chats/:username/messages', requireAuth, async (req, res, next) => 
       'select=id,sender_id,recipient_id,ciphertext,iv,created_at,delivered_at,read_at&or=(and(sender_id.eq.' +
       mine + ',recipient_id.eq.' + peer.id + '),and(sender_id.eq.' + peer.id + ',recipient_id.eq.' + mine +
       '))&order=created_at.asc&limit=500');
-    res.json({ peer: publicProfile(peer), messages: rows || [] });
+    const authPeer = await getAuthUserById(peer.id);
+    res.json({ peer: publicProfile(peer, authPeer?.user_metadata || {}), messages: rows || [] });
   } catch (error) { next(error); }
 });
 
@@ -706,4 +837,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validBio, publicProfile };

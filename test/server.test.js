@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata } = require('../server');
 
 test('native FCM tokens are bounded and whitespace-free', () => {
   assert.equal(validFcmToken('f'.repeat(152)), true);
@@ -32,6 +32,25 @@ test('display names are bounded and reject markup delimiters', () => {
   assert.equal(validDisplayName('A'), false);
   assert.equal(validDisplayName('x'.repeat(41)), false);
   assert.equal(validDisplayName('<admin>'), false);
+});
+
+test('legacy oversized profile metadata is compacted before issuing chat tokens', () => {
+  const largeImage = 'data:image/jpeg;base64,' + 'A'.repeat(45_000);
+  const compact = compactUserMetadata({
+    username: 'MADDY',
+    display_name: 'Maddy Hunk',
+    full_name: 'Maddy Hunk',
+    bio: 'Available for a chat',
+    avatar_url: largeImage,
+    picture: largeImage,
+    huge_provider_blob: 'x'.repeat(20_000)
+  });
+  assert.equal(compact.username, 'maddy');
+  assert.equal(compact.display_name, 'Maddy Hunk');
+  assert.equal(compact.bio, 'Available for a chat');
+  assert.equal(Object.hasOwn(compact, 'avatar_url'), false);
+  assert.equal(Object.hasOwn(compact, 'picture'), false);
+  assert.ok(Buffer.byteLength(JSON.stringify(compact), 'utf8') < 1000);
 });
 
 test('profile photo and about metadata are size-limited and safely exposed', () => {
@@ -126,6 +145,22 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /profile:refresh/);
   assert.match(html, /styles\.css\?v=profile-admin-2/);
   assert.doesNotMatch(html, /Administrator sign in|admin-chat\.fashionbazz\.in/i);
+});
+
+test('normal user sign-in cleans old oversized auth metadata before the browser receives its JWT', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  assert.match(js, /fetch\('\/api\/auth\/login'/);
+  assert.doesNotMatch(js, /authRequest\('token\?grant_type=password'/);
+  assert.match(server, /app\.post\('\/api\/auth\/login'/);
+  assert.match(server, /metadataBytes > 3000 \|\| unsafeAvatar/);
+  assert.match(server, /updateAuthUserMetadata\(result\.user, compactMetadata, true\)/);
+  assert.match(server, /grant_type=refresh_token/);
+  assert.match(server, /access_token\)\.length > 12_000/);
+  assert.match(server, /function compactUserMetadata\(/);
 });
 
 test('admin console is served at a separate page path and its APIs require authenticated admin access', async (t) => {
@@ -239,7 +274,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v11/);
+  assert.match(sw, /fb-chat-shell-v12/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /Microphone for voice calls/);
   assert.match(js, /Camera for video calls/);
@@ -320,7 +355,7 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v11/);
+  assert.match(sw, /fb-chat-shell-v12/);
 });
 
 
@@ -376,7 +411,7 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="flipCameraButton"/);
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
-  assert.match(sw, /fb-chat-shell-v11/);
+  assert.match(sw, /fb-chat-shell-v12/);
 });
 
 

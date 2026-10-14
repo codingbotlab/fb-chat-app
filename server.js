@@ -1267,7 +1267,15 @@ app.get('/api/chats/:username/messages', requireAuth, async (req, res, next) => 
       mine + ',recipient_id.eq.' + peer.id + '),and(sender_id.eq.' + peer.id + ',recipient_id.eq.' + mine +
       '))&order=created_at.asc&limit=500');
     const authPeer = await getAuthUserById(peer.id);
-    res.json({ peer: publicProfile(peer, authPeer?.user_metadata || {}), messages: rows || [] });
+    let peerMetadata = authPeer?.user_metadata || {};
+    if (authPeer) {
+      try {
+        peerMetadata = await ensureStoredAvatarMetadata(authPeer);
+      } catch {
+        // Keep chat history available if legacy avatar migration needs another attempt.
+      }
+    }
+    res.json({ peer: publicProfile(peer, peerMetadata), messages: rows || [] });
   } catch (error) { next(error); }
 });
 
@@ -1348,11 +1356,20 @@ io.on('connection', (socket) => {
         user.id + ',recipient_id.eq.' + peer.id + '),and(sender_id.eq.' + peer.id + ',recipient_id.eq.' + user.id +
         '))&order=created_at.asc&limit=500';
       const messages = await db('chat_messages', query);
+      const authPeer = await getAuthUserById(peer.id);
+      let peerMetadata = authPeer?.user_metadata || {};
+      if (authPeer) {
+        try {
+          peerMetadata = await ensureStoredAvatarMetadata(authPeer);
+        } catch {
+          // Keep encrypted message history available if avatar migration fails.
+        }
+      }
       await db('chat_messages', 'recipient_id=eq.' + user.id + '&sender_id=eq.' + peer.id + '&delivered_at=is.null', {
         method: 'PATCH', prefer: 'return=minimal', body: { delivered_at: new Date().toISOString() }
       });
       socket.emit('chat:history', {
-        peer: publicProfile(peer),
+        peer: publicProfile(peer, peerMetadata),
         messages: (messages || []).map(m => ({
           ...m,
           sender_username: m.sender_id === user.id ? user.username : peer.username,

@@ -721,6 +721,12 @@
     try { socket?.disconnect(); } catch {}
     if (!session?.access_token) return;
     socket = window.io({ auth: { token: session.access_token }, transports: ['websocket', 'polling'] });
+    socket.on('session:replaced', (data = {}) => {
+      clearSession();
+      renderChats();
+      $('#authOverlay').classList.add('show');
+      setAuthMode('login', data.reason || 'This account was opened on another device. Sign in again to continue.');
+    });
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false, 'Offline · reconnecting'));
     socket.on('connect_error', (error) => {

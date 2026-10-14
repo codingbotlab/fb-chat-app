@@ -77,7 +77,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   // Never cache auth, API responses, or the Socket.IO transport/library.
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/') ||
+      url.pathname === '/admin-chat' || url.pathname.startsWith('/admin-chat/')) return;
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);

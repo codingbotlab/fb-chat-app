@@ -134,13 +134,29 @@
 
   <div class="modalback" id="genericModal" hidden><section class="modalcard" role="dialog" aria-modal="true" aria-labelledby="genericTitle"><button class="modalclose" id="genericCancel" aria-label="Close">×</button><h2 id="genericTitle">New chat</h2><p id="genericDescription">Enter a person's username.</p><form id="genericForm"><label id="genericLabel" for="genericInput">Username</label><input id="genericInput" maxlength="24" placeholder="e.g. sana_khan" autocomplete="off" spellcheck="false" required><button class="primary" type="submit" id="genericSubmit">Start chat</button></form><div id="genericFoot" class="modal-foot"></div></section></div>
   <section class="call-overlay" id="callOverlay" hidden aria-label="Call window">
-    <div class="call-card">
-      <header><strong id="callTitle">Call</strong><span id="callStatus">Connecting…</span></header>
-      <div class="call-video-stage"><video id="remoteCallVideo" autoplay playsinline></video><video id="localCallVideo" autoplay playsinline muted></video><audio id="remoteCallAudio" autoplay></audio></div>
-      <div class="call-controls"><button type="button" id="muteCallButton">Mute mic</button><button type="button" id="cameraCallButton">Camera off</button><button type="button" id="endCallButton" class="end-call">End call</button></div>
-      <p>Calls are peer-to-peer when network conditions allow. Camera/microphone permission is required.</p>
+    <div class="call-card call-fullscreen">
+      <header class="call-header">
+        <button type="button" class="call-minimize" id="minimizeCallButton" aria-label="Minimize call" title="Minimize call">⌄</button>
+        <div class="call-person"><div class="call-avatar" id="callAvatar">?</div><div class="call-person-copy"><strong id="callTitle">Call</strong><span id="callTimer" hidden>00:00</span><small id="callStatus">Connecting…</small></div></div>
+        <span class="call-secure" aria-label="Call connection status">●</span>
+      </header>
+      <div class="call-video-stage">
+        <video id="remoteCallVideo" autoplay playsinline hidden></video>
+        <div class="remote-call-placeholder" id="remoteCallPlaceholder" hidden><div class="remote-placeholder-avatar" id="remotePlaceholderAvatar">?</div><strong>Waiting for the other camera…</strong><span>Keep the call open while the video connects.</span></div>
+        <video id="localCallVideo" autoplay playsinline muted hidden></video>
+        <audio id="remoteCallAudio" autoplay></audio>
+      </div>
+      <div class="call-controls call-controls-whatsapp">
+        <button type="button" id="muteCallButton" aria-pressed="false"><span class="call-control-icon">🎙</span><span>Mute</span></button>
+        <button type="button" id="speakerCallButton" class="control-active" aria-pressed="true"><span class="call-control-icon">🔊</span><span>Speaker</span></button>
+        <button type="button" id="cameraCallButton" aria-pressed="false"><span class="call-control-icon">📷</span><span>Camera off</span></button>
+        <button type="button" id="flipCameraButton"><span class="call-control-icon">🔄</span><span>Flip</span></button>
+        <button type="button" id="endCallButton" class="end-call"><span class="call-control-icon">☎</span><span>End</span></button>
+      </div>
+      <p class="call-footnote">Private one-to-one call · Audio/video travel directly between devices when the network allows.</p>
     </div>
   </section>
+  <button type="button" class="call-floating-button" id="callFloatingButton" hidden>↗ Return to call</button>
   <div class="toast alert alert-info" id="toast" role="status" aria-live="polite" aria-atomic="true"><i class="bi bi-info-circle-fill" aria-hidden="true"></i><span id="toastMessage"></span></div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script src="/socket.io/socket.io.js"></script>

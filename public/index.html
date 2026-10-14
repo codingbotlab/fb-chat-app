@@ -19,7 +19,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/styles.css?v=wa-pages-theme-consent-1">
 </head>
-<body>
+<body data-theme="system">
   <div class="app" id="app">
     <aside class="rail" aria-label="Main navigation">
       <div class="brand" title="FB Chat"><span class="brand-icon" aria-label="FB Chat logo"><svg viewBox="0 0 48 48" role="img" aria-hidden="true"><path d="M12 8.5h24a5.5 5.5 0 0 1 5.5 5.5v15a5.5 5.5 0 0 1-5.5 5.5H23l-10.5 6v-6A5.5 5.5 0 0 1 7 29V14a5.5 5.5 0 0 1 5-5.5Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M17 27V17h14M17 22h10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
@@ -259,6 +259,10 @@
   <div class="modalback calls-modal" id="callsModal" hidden>
     <section class="modalcard profile-card profile-page calls-page" role="dialog" aria-modal="true" aria-labelledby="callsTitle">
       <header class="profile-page-header calls-page-header">
+        <button class="profile-back-button" id="callsClose" type="button" aria-label="Back to chats">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          <span>Back</span>
+        </button>
         <div class="profile-page-heading">
           <h2 id="callsTitle">Calls</h2>
           <p class="profile-intro">Your recent voice and video calls</p>

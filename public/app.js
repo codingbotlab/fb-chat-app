@@ -1868,11 +1868,6 @@
       } catch (error) { $('#profileSaveError').textContent = error.message || 'Could not use that photo.'; }
       finally { button.disabled = false; button.textContent = 'Change photo'; $('#profileAvatarFile').value = ''; }
     });
-    $('#profileSecurityButton').addEventListener('click', () => infoModal(
-      'Privacy & encryption',
-      'Messages are encrypted in this browser using ECDH P-256 and AES-GCM. The database stores ciphertext. This prototype has not had an independent security audit.',
-      [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]
-    ));
     $('#profileSignOutButton').addEventListener('click', () => { closeProfileDialog(); void signOut(); });
     window.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && !$('#profileModal').hidden) closeProfileDialog();

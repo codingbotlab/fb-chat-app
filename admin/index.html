@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>FB Chat · Admin</title>
+  <link rel="stylesheet" href="/__admin_assets/admin.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="FB Chat Admin home"><span class="mark">f.</span><span><strong>FB Chat</strong><small>ADMIN CONSOLE</small></span></a>
+      <div class="top-actions"><span id="servicePill" class="pill muted">Connecting…</span><button id="refreshButton" class="btn quiet" hidden>↻ Refresh</button><button id="logoutButton" class="btn quiet" hidden>Sign out</button></div>
+    </header>
+    <main>
+      <section id="loginView" class="login-wrap">
+        <form id="loginForm" class="login-card">
+          <div class="lock-mark">⌁</div>
+          <p class="eyebrow">RESTRICTED ACCESS</p>
+          <h1>Administrator sign in</h1>
+          <p class="muted-copy">Use the authorised FB Chat admin email and its existing account password.</p>
+          <div id="configNotice" class="notice" hidden></div>
+          <label for="email">Admin email</label><input id="email" type="email" autocomplete="username" required placeholder="you@example.com">
+          <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required minlength="10" placeholder="Your account password">
+          <button id="loginSubmit" class="btn primary full" type="submit">Sign in securely</button>
+          <p id="loginError" class="error-text" role="status"></p>
+          <p class="fineprint">Every admin API request is verified on the server. A signed-in non-admin account cannot view this console.</p>
+        </form>
+      </section>
+      <section id="dashboardView" hidden>
+        <div class="welcome-row"><div><p class="eyebrow">SYSTEM OVERVIEW</p><h1>Admin dashboard</h1><p id="lastUpdated" class="muted-copy">Loading service data…</p></div><span id="adminEmail" class="admin-email"></span></div>
+        <nav class="tabs" aria-label="Admin sections">
+          <button class="tab active" data-panel="overview">Overview</button>
+          <button class="tab" data-panel="users">Users</button>
+          <button class="tab" data-panel="activity">Message activity</button>
+          <button class="tab" data-panel="devices">App & web</button>
+        </nav>
+        <div id="dashboardError" class="notice" hidden></div>
+        <section id="panel-overview" class="panel">
+          <div id="statGrid" class="stat-grid"></div>
+          <div class="columns">
+            <article class="card"><div class="card-head"><div><h2>Recent accounts</h2><p>Most recently created profiles</p></div><button class="text-btn" data-jump="users">All users →</button></div><div id="recentUsers" class="table-wrap"></div></article>
+            <article class="card"><div class="card-head"><div><h2>Service health</h2><p>Live runtime and delivery configuration</p></div></div><div id="healthList" class="health-list"></div></article>
+          </div>
+          <div class="notice privacy-notice"><strong>Privacy boundary</strong><span>Encrypted message content is never shown here. Activity includes sender/recipient, timestamps and delivery/read metadata only—not plaintext or ciphertext.</span></div>
+        </section>
+        <section id="panel-users" class="panel" hidden>
+          <article class="card"><div class="card-head"><div><h2>Account directory</h2><p>Email, username, profile, sign-in and encryption setup</p></div><div class="directory-actions"><input id="userSearch" class="search" type="search" placeholder="Search name, email or username"><button id="searchUsersButton" class="btn quiet">Search</button></div></div><div id="usersTable" class="table-wrap"><div class="loading">Loading accounts…</div></div><div id="userCount" class="table-foot"></div></article>
+        </section>
+        <section id="panel-activity" class="panel" hidden>
+          <article class="card"><div class="card-head"><div><h2>Recent message activity</h2><p>Metadata only. Message body is not available to admins.</p></div><span class="pill">Latest 100 records</span></div><div id="activityTable" class="table-wrap"><div class="loading">Loading activity…</div></div></article>
+        </section>
+        <section id="panel-devices" class="panel" hidden>
+          <div class="stat-grid compact" id="deviceStats"></div>
+          <article class="card"><div class="card-head"><div><h2>Registered Android devices</h2><p>Notification registration metadata, not push tokens</p></div></div><div id="androidTable" class="table-wrap"></div></article>
+          <article class="card"><div class="card-head"><div><h2>Web / PWA subscriptions</h2><p>Browser notification subscriptions, with secret endpoints hidden</p></div></div><div id="webTable" class="table-wrap"></div></article>
+        </section>
+        <footer class="footer">FB Chat Admin · Private operations console · <span id="privacyFooter">No message contents exposed</span></footer>
+      </section>
+    </main>
+  </div>
+  <script src="/__admin_assets/admin.js" defer></script>
+</body>
+</html>

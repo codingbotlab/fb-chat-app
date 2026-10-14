@@ -627,7 +627,6 @@
     if (window.FBChatNative) {
       void syncNativePushToken();
       try { window.FBChatNative.refreshToken(); } catch {}
-      try { window.FBChatNative.checkForAppUpdate(); } catch {}
     }
     handleQueuedNotificationChat();
     handleQueuedNotificationCall();

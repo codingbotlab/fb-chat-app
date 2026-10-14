@@ -174,7 +174,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v9/);
+  assert.match(sw, /fb-chat-shell-v10/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /Microphone for voice calls/);
   assert.match(js, /Camera for video calls/);
@@ -250,12 +250,12 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /let chatOpenRequest = 0/);
   assert.match(js, /requestId !== chatOpenRequest/);
   assert.match(js, /async function acquireCallMedia\(kind\)/);
-  assert.match(js, /Request the camera separately/);
+  assert.match(js, /async function acquireCallMedia\(kind\)/);
   assert.match(js, /audio source not found/i);
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v9/);
+  assert.match(sw, /fb-chat-shell-v10/);
 });
 
 

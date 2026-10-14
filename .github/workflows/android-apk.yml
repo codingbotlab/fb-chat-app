@@ -97,11 +97,13 @@ jobs:
           test -n "$VERSION"
           TAG="fbchat-v$VERSION"
           RELEASE_APK="$RUNNER_TEMP/fbchat-$VERSION.apk"
+          LATEST_APK="$RUNNER_TEMP/FBChat-latest.apk"
           cp "$APK" "$RELEASE_APK"
+          cp "$APK" "$LATEST_APK"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$RELEASE_APK" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" "$RELEASE_APK" "$LATEST_APK" --clobber --repo "$GITHUB_REPOSITORY"
             gh release delete-asset "$TAG" app-debug.apk --yes --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
-            gh release edit "$TAG" --title "FB Chat $VERSION" --notes "Signed Android update for FB Chat $VERSION. Installation is confirmed by Android; stable signing is used for future updates." --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --title "FB Chat $VERSION" --notes "Signed Android update for FB Chat $VERSION. Legacy installs can download FBChat-latest.apk for one-time migration; future versions offer an in-app update prompt." --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" "$RELEASE_APK" --title "FB Chat $VERSION" --notes "Signed Android update for FB Chat $VERSION. Installation is confirmed by Android; stable signing is used for future updates." --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
+            gh release create "$TAG" "$RELEASE_APK" "$LATEST_APK" --title "FB Chat $VERSION" --notes "Signed Android update for FB Chat $VERSION. Legacy installs can download FBChat-latest.apk for one-time migration; future versions offer an in-app update prompt." --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
           fi

@@ -37,7 +37,7 @@
       status('Open FB Chat on your signed-in phone and choose “Scan QR with this phone”. Expires in 90 seconds.');
       const poll = async () => {
         try {
-          const r = await fetch('/api/qr/status?id=' + encodeURIComponent(pair.id) + '&secret=' + encodeURIComponent(pair.secret), { cache: 'no-store' });
+          const r = await fetch('/api/qr/status', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pair.id, secret: pair.secret }) });
           const data = await r.json().catch(() => ({}));
           if (data.status === 'approved' && data.session?.access_token && data.session?.refresh_token) {
             clearInterval(pollTimer); clearTimeout(expiryTimer);

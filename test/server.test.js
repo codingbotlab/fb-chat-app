@@ -257,3 +257,16 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
   assert.match(sw, /fb-chat-shell-v9/);
 });
+
+
+test('Android WebRTC manifest includes audio routing permission and bumped release version', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const android = path.join(__dirname, '..', 'android');
+  const manifest = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+  const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
+  assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
+  assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
+  assert.match(gradle, /versionCode 4/);
+  assert.match(gradle, /versionName '1\.2\.1'/);
+});

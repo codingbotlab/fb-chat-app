@@ -168,7 +168,7 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /async function saveProfile\(event\)/);
   assert.match(js, /async function resizeProfilePhoto\(file\)/);
   assert.match(js, /profile:refresh/);
-  assert.ok(html.includes('styles.css?v=wa-compact-2'));
+  assert.ok(html.includes('styles.css?v=wa-profile-fullscreen-1'));
   assert.doesNotMatch(html, /Administrator sign in|admin-chat\.fashionbazz\.in/i);
 });
 
@@ -181,11 +181,11 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
 
-  assert.ok(html.includes('styles.css?v=wa-compact-2'));
+  assert.ok(html.includes('styles.css?v=wa-profile-fullscreen-1'));
   assert.match(html, /data-bottom-nav="chats"/);
   assert.match(html, /data-bottom-nav="calls"/);
   assert.match(html, /data-bottom-nav="profile"/);
-  assert.match(html, /data-bottom-nav="settings"/);
+  assert.doesNotMatch(html, /data-bottom-nav="settings"/);
   assert.doesNotMatch(html, /data-bottom-nav="updates"|data-bottom-nav="communities"/);
   assert.doesNotMatch(html, /data-rail="updates"|data-rail="communities"/);
   assert.match(js, /if \(section === 'profile'\) \{ profileDialog\(\); return; \}/);
@@ -195,8 +195,41 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   assert.match(css, /\.messagebox\{/);
   assert.match(css, /@media\(max-width:720px\)/);
   assert.ok(css.includes('.app.chat-open{padding-bottom:0}'));
-  assert.match(sw, /fb-chat-shell-v14/);
-  assert.ok(sw.includes('/styles.css?v=wa-compact-2'));
+  assert.match(sw, /fb-chat-shell-v15/);
+  assert.ok(sw.includes('/styles.css?v=wa-profile-fullscreen-1'));
+});
+
+test('profile opens as a full-screen page and owns the settings controls', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  assert.match(html, /class="modalcard profile-card profile-page"/);
+  assert.match(html, /id="profileSummaryName"/);
+  assert.match(html, /id="profileSettingsSection"/);
+  assert.match(html, /id="profileSettingsContent"/);
+  assert.doesNotMatch(html, /id="mobileSettingsButton"|data-bottom-nav="settings"/);
+  assert.match(css, /\.profile-page\{[^}]*height:100dvh/);
+  assert.match(css, /\.profile-setting-row/);
+  assert.match(js, /async function renderProfileSettings\(/);
+  assert.match(js, /async function settingsDialog\(\) \{\s*await profileDialog\(\)/);
+  assert.match(js, /profile\.avatar_url: Object\.hasOwn/);
+  assert.match(sw, /fb-chat-shell-v15/);
+});
+
+test('legacy profile avatars are recovered from Storage or migrated from raster data URLs', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(server, /async function findStoredProfileAvatar\(/);
+  assert.match(server, /async function ensureStoredAvatarMetadata\(/);
+  assert.match(server, /await findStoredProfileAvatar\(sessionResult\.user\.id\)/);
+  assert.match(server, /await storeProfileAvatar\(sessionResult\.user\.id, initialAvatar\)/);
+  assert.match(server, /await ensureStoredAvatarMetadata\(item\)/);
+  assert.match(server, /avatar_url: visible\.avatar_url, bio: visible\.bio/);
 });
 
 test('normal user sign-in cleans old oversized auth metadata before the browser receives its JWT', () => {
@@ -329,7 +362,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v14/);
+  assert.match(sw, /fb-chat-shell-v15/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /Microphone for voice calls/);
   assert.match(js, /Camera for video calls/);
@@ -410,7 +443,7 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v14/);
+  assert.match(sw, /fb-chat-shell-v15/);
 });
 
 
@@ -466,7 +499,7 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="flipCameraButton"/);
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
-  assert.match(sw, /fb-chat-shell-v14/);
+  assert.match(sw, /fb-chat-shell-v15/);
 });
 
 

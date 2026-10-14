@@ -56,16 +56,21 @@ public final class NativeConversationActivity extends Activity {
         TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);
         if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;
     }
+    private ImageView icon(int resource,int tint){
+        ImageView view=new ImageView(this);view.setImageResource(resource);view.setColorFilter(tint);
+        view.setScaleType(ImageView.ScaleType.CENTER_INSIDE);return view;
+    }
     private void buildUi(){
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(10),dp(5),dp(12),dp(5));header.setBackgroundColor(SURFACE);
-        TextView back=label("‹",34,GREEN,true);back.setGravity(Gravity.CENTER);
+        ImageView back=icon(R.drawable.ic_back,GREEN);back.setPadding(dp(8),dp(8),dp(8),dp(8));
         header.addView(back,new LinearLayout.LayoutParams(dp(42),dp(52)));back.setOnClickListener(v->finish());
         LinearLayout names=new LinearLayout(this);names.setOrientation(LinearLayout.VERTICAL);
         names.addView(label(displayName==null||displayName.isEmpty()?"@"+username:displayName,17,TEXT,true));
         status=label("Connecting…",12,MUTED,false);names.addView(status);
         header.addView(names,new LinearLayout.LayoutParams(0,-2,1));
-        TextView more=label("⋮",26,TEXT,true);more.setGravity(Gravity.CENTER);header.addView(more,new LinearLayout.LayoutParams(dp(36),dp(48)));
+        ImageView more=icon(R.drawable.ic_more,TEXT);more.setPadding(dp(8),dp(8),dp(8),dp(8));
+        header.addView(more,new LinearLayout.LayoutParams(dp(36),dp(48)));
         more.setOnClickListener(v->new android.app.AlertDialog.Builder(this).setItems(new String[]{"View contact","Clear this screen"},(dialog,which)->{
             if(which==0)new android.app.AlertDialog.Builder(this).setTitle(displayName).setMessage("@"+username).setPositiveButton("OK",null).show();
             else messages.removeAllViews();
@@ -79,7 +84,8 @@ public final class NativeConversationActivity extends Activity {
         composer.setHint("Message");composer.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         composer.setImeOptions(EditorInfo.IME_ACTION_SEND);composer.setBackground(shape(Color.rgb(42,57,64),24));composer.setPadding(dp(16),dp(8),dp(16),dp(8));
         bar.addView(composer,new LinearLayout.LayoutParams(0,dp(48),1));
-        TextView send=label("➤",23,Color.WHITE,true);send.setGravity(Gravity.CENTER);send.setBackground(shape(GREEN,28));
+        ImageView send=icon(R.drawable.ic_send,Color.WHITE);send.setPadding(dp(12),dp(12),dp(12),dp(12));
+        send.setBackground(shape(GREEN,28));send.setContentDescription("Send message");
         LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(dp(48),dp(48));sl.leftMargin=dp(8);bar.addView(send,sl);
         send.setOnClickListener(v->sendMessage());
         composer.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEND){sendMessage();return true;}return false;});

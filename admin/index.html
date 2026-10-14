@@ -7,6 +7,7 @@
   <meta name="robots" content="noindex,nofollow">
   <meta name="referrer" content="no-referrer">
   <title>FB Chat · Admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="/admin-chat/admin.css">
 </head>
 <body>
@@ -37,6 +38,7 @@
           <button class="tab" data-panel="users">Users</button>
           <button class="tab" data-panel="activity">Message activity</button>
           <button class="tab" data-panel="devices">App & web</button>
+          <button class="tab" data-panel="native">Native app</button>
         </nav>
         <div id="dashboardError" class="notice" hidden></div>
         <section id="panel-overview" class="panel">
@@ -57,6 +59,33 @@
           <div class="stat-grid compact" id="deviceStats"></div>
           <article class="card"><div class="card-head"><div><h2>Registered Android devices</h2><p>Notification registration metadata, not push tokens</p></div></div><div id="androidTable" class="table-wrap"></div></article>
           <article class="card"><div class="card-head"><div><h2>Web / PWA subscriptions</h2><p>Browser notification subscriptions, with secret endpoints hidden</p></div></div><div id="webTable" class="table-wrap"></div></article>
+        </section>
+        <section id="panel-native" class="panel" hidden>
+          <article class="card native-release-card">
+            <div class="native-release-head">
+              <div class="native-app-mark"><i class="bi bi-phone-fill" aria-hidden="true"></i></div>
+              <div class="native-release-copy">
+                <p class="eyebrow">ANDROID MANAGEMENT</p>
+                <h2 id="nativeAppName">FB Chat Native</h2>
+                <p id="nativeAppSubtitle" class="muted-copy">Release details and installed Android devices</p>
+              </div>
+              <a id="nativeApkLink" class="btn primary" href="https://github.com/codingbotlab/fb-chat-app/releases/latest/download/FBChat-latest.apk" target="_blank" rel="noopener noreferrer"><i class="bi bi-download" aria-hidden="true"></i> Download APK</a>
+            </div>
+            <div id="nativeReleaseDetails" class="native-meta-grid"></div>
+          </article>
+          <div id="nativeStatGrid" class="stat-grid"></div>
+          <article class="card">
+            <div class="card-head"><div><h2><i class="bi bi-phone" aria-hidden="true"></i> Registered native devices</h2><p>Account, device name, app/browser metadata and last registration. Push tokens are never displayed.</p></div><button id="nativeRefreshDevices" class="btn quiet" type="button"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh</button></div>
+            <div id="nativeAndroidTable" class="table-wrap"><div class="loading">Loading Android devices…</div></div>
+          </article>
+          <article class="card native-cleanup-card">
+            <div class="card-head"><div><h2><i class="bi bi-trash3" aria-hidden="true"></i> Legacy encrypted-message cleanup</h2><p>Delete old encrypted messages from every account while preserving new PLAIN: messages.</p></div><span id="nativeLegacyCount" class="pill">Loading count…</span></div>
+            <div class="native-cleanup-body">
+              <p>This is a permanent global operation. It removes unreadable legacy encrypted message records; it does not remove users or new simple-mode messages.</p>
+              <button id="purgeLegacyMessagesButton" class="btn danger" type="button"><i class="bi bi-trash3-fill" aria-hidden="true"></i> Delete all old encrypted messages</button>
+              <p id="purgeLegacyMessagesStatus" class="table-foot" role="status">No deletion will run until you confirm the action.</p>
+            </div>
+          </article>
         </section>
         <footer class="footer">FB Chat Admin · Private operations console · <span id="privacyFooter">No message contents exposed</span></footer>
       </section>

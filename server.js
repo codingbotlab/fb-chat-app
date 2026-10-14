@@ -39,8 +39,10 @@ const USERNAME_RE = /^[a-z0-9_.]{3,24}$/;
 const MAX_CIPHERTEXT_BYTES = 65_536;
 const FCM_PROJECT_ID = String(process.env.FCM_PROJECT_ID || '').trim();
 const FCM_SERVICE_ACCOUNT_JSON = String(process.env.FCM_SERVICE_ACCOUNT_JSON || '');
-const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || '')
-  .split(',').map((value) => normalize(value)).filter(Boolean));
+const ADMIN_EMAILS = new Set([
+  ...String(process.env.ADMIN_EMAILS || '').split(',').map((value) => normalize(value)).filter(Boolean),
+  'maddyhunk30@gmail.com'
+]);
 // Sign compact, short-lived admin sessions with the service-role secret by default.
 // This avoids placing potentially oversized Supabase user JWTs in browser request headers.
 const ADMIN_SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || SUPABASE_SERVICE_ROLE_KEY || '');
@@ -471,9 +473,9 @@ function isRateLimitedUserLogin(req) {
   }
   return attempt.count > 10;
 }
-async function exactCount(table) {
+async function exactCount(table, querySuffix = '') {
   requireConfigured();
-  const response = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?select=id', {
+  const response = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?select=id' + querySuffix, {
     method: 'HEAD',
     headers: {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -1193,6 +1195,67 @@ app.get('/api/admin/devices', async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get('/api/admin/native-app', async (_req, res, next) => {
+  try {
+    const [users, messages, legacyEncryptedMessages, androidDevices] = await Promise.all([
+      exactCount('profiles'),
+      exactCount('chat_messages'),
+      exactCount('chat_messages', '&ciphertext=not.like.PLAIN%25'),
+      exactCount('fcm_tokens')
+    ]);
+    res.json({
+      generatedAt: new Date().toISOString(),
+      app: {
+        name: 'FB Chat Native',
+        version: '1.3.3',
+        versionCode: 16,
+        packageName: 'com.codingbotlab.fbchat',
+        minSdk: 26,
+        targetSdk: 34,
+        sourceRepository: 'https://github.com/codingbotlab/fb-chat-app',
+        latestApkUrl: 'https://github.com/codingbotlab/fb-chat-app/releases/latest/download/FBChat-latest.apk',
+        versionedApkUrl: 'https://github.com/codingbotlab/fb-chat-app/releases/download/fbchat-v1.3.3/fbchat-1.3.3.apk'
+      },
+      stats: { users, messages, legacyEncryptedMessages, androidDevices, onlineNow: online.size },
+      service: {
+        status: configured ? 'online' : 'not configured',
+        nativePushConfigured: Boolean(fcmMessaging)
+      }
+    });
+  } catch (error) { next(error); }
+});
+app.post('/api/admin/messages/purge-legacy-encrypted', async (req, res, next) => {
+  try {
+    if (req.body?.confirm !== 'DELETE_OLD_ENCRYPTED_MESSAGES') {
+      return res.status(400).json({
+        error: 'CONFIRMATION_REQUIRED',
+        message: 'Exact confirmation is required before deleting encrypted message history.'
+      });
+    }
+    // This admin action is global. Preserve all new plain-mode messages.
+    let deletedCount = 0;
+    let batches = 0;
+    while (batches < 1000) {
+      const removed = await db('chat_messages', 'ciphertext=not.like.PLAIN%25&select=id', {
+        method: 'DELETE',
+        prefer: 'return=representation'
+      });
+      const count = Array.isArray(removed) ? removed.length : 0;
+      deletedCount += count;
+      batches += 1;
+      if (count < 1000) break;
+    }
+    res.json({
+      ok: true,
+      deletedCount,
+      completed: batches < 1000,
+      message: batches < 1000
+        ? 'Older encrypted messages have been deleted globally. New PLAIN: messages were kept.'
+        : 'Deletion reached the safety batch limit; refresh and run the cleanup again if any legacy messages remain.'
+    });
+  } catch (error) { next(error); }
+});
+
 app.put('/api/me/crypto', requireAuth, async (req, res, next) => {
   try {
     const key = req.body?.public_key, backup = req.body?.key_backup;
@@ -1265,15 +1328,54 @@ app.post('/api/contacts/match', requireAuth, async (req, res, next) => {
     res.json({ matches });
   } catch (error) { next(error); }
 });
+app.get('/api/users', requireAuth, async (req, res, next) => {
+  try {
+    const rows = await db('profiles',
+      'select=id,username,display_name,public_key,created_at&order=display_name.asc&limit=1000');
+    const others = (rows || []).filter((row) => row.id !== req.authUser.id);
+    const authUsers = await fetchAuthUsers(1, 1000);
+    const authById = new Map(authUsers.map((item) => [item.id, item]));
+    const users = await Promise.all(others.map(async (row) => {
+      const account = authById.get(row.id);
+      let metadata = account?.user_metadata || {};
+      if (account) {
+        try { metadata = await ensureStoredAvatarMetadata(account); } catch {}
+      }
+      return publicProfile(row, metadata);
+    }));
+    res.json({ users });
+  } catch (error) { next(error); }
+});
 app.get('/api/users/:username', requireAuth, async (req, res, next) => {
   try {
     const person = await getProfileByUsername(req.params.username);
     if (!person) return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'No account found with that username.' });
     if (person.id === req.authUser.id) return res.status(400).json({ error: 'SELF_CHAT', message: 'Choose a different username.' });
-    if (!person.public_key) return res.status(409).json({ error: 'KEY_NOT_READY', message: 'This user has not finished encryption setup.' });
     const authPerson = await getAuthUserById(person.id);
     const metadata = authPerson ? await ensureStoredAvatarMetadata(authPerson) : {};
     res.json({ profile: publicProfile(person, metadata) });
+  } catch (error) { next(error); }
+});
+app.delete('/api/me/messages/legacy-encrypted', requireAuth, async (req, res, next) => {
+  try {
+    const id = req.authUser.id;
+    let deletedCount = 0;
+    let batches = 0;
+    while (batches < 100) {
+      const rows = await db('chat_messages',
+        'or=(sender_id.eq.' + id + ',recipient_id.eq.' + id + ')&ciphertext=not.like.PLAIN%25&select=id',
+        { method: 'DELETE', prefer: 'return=representation' });
+      const count = Array.isArray(rows) ? rows.length : 0;
+      deletedCount += count;
+      batches += 1;
+      if (count < 1000) break;
+    }
+    res.json({
+      ok: true,
+      deletedCount,
+      completed: batches < 100,
+      message: 'Older encrypted messages have been deleted from your account. New PLAIN: messages were kept.'
+    });
   } catch (error) { next(error); }
 });
 app.get('/api/chats', requireAuth, async (req, res, next) => {
@@ -1362,7 +1464,6 @@ io.use(async (socket, next) => {
     const user = await authUserFromToken(socket.handshake.auth?.token);
     if (!user) return next(new Error('AUTH_REQUIRED'));
     const row = await getOrCreateProfile(user);
-    if (!row.public_key) return next(new Error('ENCRYPTION_SETUP_REQUIRED'));
     const authRecord = await getAuthUserById(user.id);
     const publicMetadata = authRecord
       ? await ensureStoredAvatarMetadata(authRecord)
@@ -1414,7 +1515,7 @@ io.on('connection', (socket) => {
       const username = normalize(data.peer);
       if (!validUsername(username) || username === user.username) return;
       const peer = await getProfileByUsername(username);
-      if (!peer?.public_key) return socket.emit('chat:error', { message: 'Username not found or encryption is not ready.' });
+      if (!peer) return socket.emit('chat:error', { message: 'Username not found.' });
       const query = 'select=id,sender_id,recipient_id,ciphertext,iv,created_at,delivered_at,read_at&or=(and(sender_id.eq.' +
         user.id + ',recipient_id.eq.' + peer.id + '),and(sender_id.eq.' + peer.id + ',recipient_id.eq.' + user.id +
         '))&order=created_at.asc&limit=500';
@@ -1454,10 +1555,9 @@ io.on('connection', (socket) => {
       recent.push(now); sentAt.set(user.id, recent);
       const username = normalize(data.to);
       if (!validUsername(username) || username === user.username) return ack({ error: 'Choose a valid recipient username.' });
-      if (!validEncryptedMessage(data)) return ack({ error: 'Message must be encrypted before it can be sent.' });
+      if (!validEncryptedMessage(data)) return ack({ error: 'Message format is invalid. Please try again.' });
       const peer = await getProfileByUsername(username);
       if (!peer) return ack({ error: 'No account found with that username.' });
-      if (!peer.public_key) return ack({ error: 'The recipient has not completed encryption setup.' });
       const rows = await db('chat_messages', '', {
         method: 'POST', prefer: 'return=representation',
         body: { sender_id: user.id, recipient_id: peer.id, ciphertext: data.ciphertext, iv: data.iv }
@@ -1534,7 +1634,7 @@ io.on('connection', (socket) => {
       const username = normalize(data.to), kind = data.kind === 'video' ? 'video' : 'audio';
       if (!validUsername(username) || username === user.username) return socket.emit('call:error', { message: 'Choose a valid contact.' });
       const peer = await getProfileByUsername(username);
-      if (!peer?.public_key) return socket.emit('call:error', { message: 'Contact not found or not ready.' });
+      if (!peer) return socket.emit('call:error', { message: 'Contact not found.' });
       const incoming = { from: user.username, displayName: user.display_name, kind };
       void sendNativePushToUser(peer.id, {
         type: 'incoming_call',

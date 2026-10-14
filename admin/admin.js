@@ -183,6 +183,64 @@
     $('#androidTable').innerHTML = deviceTable(data.android,true);
     $('#webTable').innerHTML = deviceTable(data.web,false);
   }
+  async function loadNativeApp() {
+    const [data, devices] = await Promise.all([
+      api('/api/admin/native-app'),
+      api('/api/admin/devices')
+    ]);
+    const app = data.app || {};
+    const stats = data.stats || {};
+    $('#nativeAppName').textContent = app.name || 'FB Chat Native';
+    $('#nativeAppSubtitle').textContent = 'Version ' + (app.version || '—') + ' · Android package and operations';
+    $('#nativeApkLink').href = app.latestApkUrl || 'https://github.com/codingbotlab/fb-chat-app/releases/latest/download/FBChat-latest.apk';
+    const detail = [
+      ['App version', app.version],
+      ['Version code', app.versionCode],
+      ['Package ID', app.packageName],
+      ['Minimum Android SDK', app.minSdk],
+      ['Target Android SDK', app.targetSdk],
+      ['Push notifications', data.service?.nativePushConfigured ? 'Configured' : 'Not configured']
+    ];
+    $('#nativeReleaseDetails').innerHTML = detail.map(([label,value]) =>
+      '<div class="native-meta-item"><span>'+esc(label)+'</span><strong>'+esc(value ?? '—')+'</strong></div>'
+    ).join('');
+    const cards = [
+      ['Registered Android devices', stats.androidDevices, 'Native push registrations'],
+      ['Registered users', stats.users, 'All FB Chat profiles'],
+      ['Total message records', stats.messages, 'All currently stored messages'],
+      ['Old encrypted messages', stats.legacyEncryptedMessages, 'Eligible for legacy cleanup'],
+      ['Online now', stats.onlineNow, 'Active realtime sessions']
+    ];
+    $('#nativeStatGrid').innerHTML = cards.map(([label,value,note]) =>
+      '<article class="stat"><div class="label">'+esc(label)+'</div><div class="value">'+esc(value ?? '—')+'</div><div class="note">'+esc(note)+'</div></article>'
+    ).join('');
+    $('#nativeLegacyCount').textContent = (stats.legacyEncryptedMessages ?? '—') + ' legacy records';
+    $('#nativeAndroidTable').innerHTML = deviceTable(devices.android,true);
+    $('#lastUpdated').textContent = 'Native app data refreshed ' + fmtDate(data.generatedAt);
+  }
+  async function purgeLegacyEncryptedMessages() {
+    const typed = window.prompt(
+      'Permanent global deletion: this removes old encrypted message records for EVERY account. New PLAIN: messages are preserved. Type DELETE to confirm.'
+    );
+    if (typed !== 'DELETE') return;
+    const button = $('#purgeLegacyMessagesButton');
+    const status = $('#purgeLegacyMessagesStatus');
+    button.disabled = true;
+    status.textContent = 'Deleting legacy encrypted messages across accounts…';
+    try {
+      const result = await api('/api/admin/messages/purge-legacy-encrypted', {
+        method: 'POST',
+        body: JSON.stringify({ confirm: 'DELETE_OLD_ENCRYPTED_MESSAGES' })
+      });
+      status.textContent = result.message + ' Deleted rows reported: ' + result.deletedCount + '.';
+      if (lastPanel === 'native') await loadNativeApp();
+      await loadOverview();
+    } catch (error) {
+      status.textContent = error.message || 'Legacy message cleanup failed.';
+    } finally {
+      button.disabled = false;
+    }
+  }
   async function loadPanel(panel) {
     lastPanel = panel;
     $('#dashboardError').hidden = true;
@@ -193,6 +251,7 @@
       else if(panel==='users') await loadUsers();
       else if(panel==='activity') await loadActivity();
       else if(panel==='devices') await loadDevices();
+      else if(panel==='native') await loadNativeApp();
     } catch(error) {
       if(error.message && /admin|sign in|session|expired|403|401/i.test(error.message)) {
         $('#dashboardError').hidden=false; $('#dashboardError').textContent=error.message;
@@ -227,6 +286,8 @@
   $('#loginForm').addEventListener('submit',login);
   $('#logoutButton').addEventListener('click',logout);
   $('#refreshButton').addEventListener('click',()=>void loadPanel(lastPanel));
+  $('#nativeRefreshDevices').addEventListener('click',()=>void loadNativeApp());
+  $('#purgeLegacyMessagesButton').addEventListener('click',()=>void purgeLegacyEncryptedMessages());
   document.querySelectorAll('[data-panel]').forEach((el)=>el.addEventListener('click',()=>void loadPanel(el.dataset.panel)));
   document.querySelectorAll('[data-jump]').forEach((el)=>el.addEventListener('click',()=>void loadPanel(el.dataset.jump)));
   $('#searchUsersButton').addEventListener('click',()=>void loadUsers());

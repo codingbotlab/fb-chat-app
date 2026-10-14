@@ -180,7 +180,7 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /async function saveProfile\(event\)/);
   assert.match(js, /async function resizeProfilePhoto\(file\)/);
   assert.match(js, /profile:refresh/);
-  assert.ok(html.includes('styles.css?v=wa-profile-fullscreen-1'));
+  assert.ok(html.includes('styles.css?v=wa-profile-fullscreen-6'));
   assert.doesNotMatch(html, /Administrator sign in|admin-chat\.fashionbazz\.in/i);
 });
 
@@ -193,7 +193,7 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
 
-  assert.ok(html.includes('styles.css?v=wa-profile-fullscreen-1'));
+  assert.ok(html.includes('styles.css?v=wa-profile-fullscreen-6'));
   assert.match(html, /data-bottom-nav="chats"/);
   assert.match(html, /data-bottom-nav="calls"/);
   assert.match(html, /data-bottom-nav="profile"/);
@@ -207,8 +207,8 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   assert.match(css, /\.messagebox\{/);
   assert.match(css, /@media\(max-width:720px\)/);
   assert.ok(css.includes('.app.chat-open{padding-bottom:0}'));
-  assert.match(sw, /fb-chat-shell-v16/);
-  assert.ok(sw.includes('/styles.css?v=wa-profile-fullscreen-1'));
+  assert.match(sw, /fb-chat-shell-v25/);
+  assert.ok(sw.includes('/styles.css?v=wa-profile-fullscreen-6'));
 });
 
 test('profile opens as a full-screen page and owns the settings controls', () => {
@@ -229,7 +229,7 @@ test('profile opens as a full-screen page and owns the settings controls', () =>
   assert.match(js, /async function renderProfileSettings\(/);
   assert.match(js, /async function settingsDialog\(\) \{\s*await profileDialog\(\)/);
   assert.match(js, /avatar_url: Object\.hasOwn\(person, 'avatar_url'\)/);
-  assert.match(sw, /fb-chat-shell-v16/);
+  assert.match(sw, /fb-chat-shell-v25/);
 });
 
 test('legacy profile avatars are recovered from Storage or migrated from raster data URLs', () => {
@@ -239,7 +239,7 @@ test('legacy profile avatars are recovered from Storage or migrated from raster 
   assert.match(server, /async function findStoredProfileAvatar\(/);
   assert.match(server, /async function ensureStoredAvatarMetadata\(/);
   assert.match(server, /await findStoredProfileAvatar\(sessionResult\.user\.id\)/);
-  assert.match(server, /await storeProfileAvatar\(sessionResult\.user\.id, initialAvatar\)/);
+  assert.match(server, /await storeProfileAvatar\(sessionResult\.user\.id, raster\)/);
   assert.match(server, /await ensureStoredAvatarMetadata\(item\)/);
   assert.match(server, /metadata = await ensureStoredAvatarMetadata\(req\.authUser\)/);
   assert.match(server, /avatar_url: visible\.avatar_url, bio: visible\.bio/);
@@ -285,7 +285,7 @@ test('contacts, profile-photo tapping and invite actions are wired without a vis
   assert.match(html, /id="activeAvatar"[^>]*role="button"/);
   assert.match(html, /id="chatDetails" type="button" hidden/);
   assert.doesNotMatch(html, /class="iconbtn" id="chatDetails"/);
-  assert.match(js, /avatar\.addEventListener\('click', \(\) => openUserProfile\(person\)\)/);
+  assert.match(js, /avatar\.addEventListener\('click', \(event\) => \{ event\.stopPropagation\(\); openUserProfile\(person\); \}\)/);
   assert.match(js, /async function requestContactImport\(/);
   assert.match(js, /navigator\.contacts\.select/);
   assert.match(js, /navigator\.share/);
@@ -356,6 +356,41 @@ test('admin console is served at a separate page path and its APIs require authe
   assert.equal(Object.hasOwn(config, 'supabaseServiceRoleKey'), false);
   const protectedOverview = await fetch(base + '/api/admin/overview');
   assert.notEqual(protectedOverview.status, 200);
+});
+
+test('native app contacts and legacy-message cleanup are wired to authenticated APIs and Material-style vector icons', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  const api = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'NativeApi.java'), 'utf8');
+  const home = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'NativeHomeActivity.java'), 'utf8');
+  const chat = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'NativeConversationActivity.java'), 'utf8');
+  const adminHtml = fs.readFileSync(path.join(root, 'admin', 'index.html'), 'utf8');
+  const adminJs = fs.readFileSync(path.join(root, 'admin', 'admin.js'), 'utf8');
+  assert.match(server, /app\.get\('\/api\/users', requireAuth/);
+  assert.match(server, /app\.delete\('\/api\/me\/messages\/legacy-encrypted', requireAuth/);
+  assert.match(server, /ciphertext=not\.like\.PLAIN%25/);
+  assert.match(server, /Older encrypted messages have been deleted from your account/);
+  assert.ok(server.includes("app.get('/api/admin/native-app'"));
+  assert.ok(server.includes("app.post('/api/admin/messages/purge-legacy-encrypted'"));
+  assert.match(adminHtml, /data-panel=\"native\"/);
+  assert.match(adminHtml, /nativeReleaseDetails/);
+  assert.match(adminHtml, /purgeLegacyMessagesButton/);
+  assert.match(adminJs, /api\('\/api\/admin\/native-app'\)/);
+  assert.match(adminJs, /Type DELETE to confirm/);
+  assert.match(api, /BASE\+"\/api\/users"/);
+  assert.match(api, /BASE\+"\/api\/me\/messages\/legacy-encrypted"/);
+  assert.match(home, /private void showContacts\(\)/);
+  assert.match(home, /renderContacts\(String query\)/);
+  assert.match(home, /Delete old encrypted messages/);
+  assert.match(home, /R\.drawable\.ic_chat/);
+  assert.match(home, /R\.drawable\.ic_contacts/);
+  assert.match(chat, /R\.drawable\.ic_send/);
+  for (const icon of ['ic_chat','ic_updates','ic_groups','ic_calls','ic_contacts','ic_delete','ic_search','ic_person','ic_settings','ic_back','ic_send','ic_more','ic_add']) {
+    const file = path.join(root, 'android', 'app', 'src', 'main', 'res', 'drawable', icon + '.xml');
+    assert.ok(fs.existsSync(file), 'missing native icon vector: ' + icon);
+  }
 });
 
 test('PWA manifest and app icons satisfy install dimensions', () => {
@@ -430,7 +465,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v16/);
+  assert.match(sw, /fb-chat-shell-v25/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /'Microphone'/);
   assert.match(js, /'Camera'/);
@@ -511,7 +546,7 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v16/);
+  assert.match(sw, /fb-chat-shell-v25/);
 });
 
 
@@ -524,8 +559,8 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
   assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
-  assert.match(gradle, /versionCode 9/);
-  assert.match(gradle, /versionName '1\.2\.5'/);
+  assert.match(gradle, /versionCode 16/);
+  assert.match(gradle, /versionName '1\.3\.3'/);
   const java = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'android-apk.yml'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
@@ -567,7 +602,7 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="flipCameraButton"/);
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
-  assert.match(sw, /fb-chat-shell-v16/);
+  assert.match(sw, /fb-chat-shell-v25/);
 });
 
 

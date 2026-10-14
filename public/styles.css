@@ -783,3 +783,6 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .qr-pair-close{position:absolute;right:12px;top:8px;border:0;background:transparent;color:#d7e0e3;font-size:30px}
 #qrPairStatus{min-height:44px;margin:10px 0}
 @media(max-width:600px){.qr-pair-card{padding:24px 16px}.qr-login-actions{flex-direction:column}}
+
+.qr-device-floating{position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:45;border:1px solid #2f665b;border-radius:999px;background:#00a884;color:#062f26;padding:11px 16px;font-weight:700;box-shadow:0 8px 24px #0005}
+.qr-device-floating[hidden]{display:none}

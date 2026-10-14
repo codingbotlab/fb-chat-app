@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validBio, publicProfile } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile } = require('../server');
 
 test('native FCM tokens are bounded and whitespace-free', () => {
   assert.equal(validFcmToken('f'.repeat(152)), true);
@@ -42,11 +42,12 @@ test('profile photo and about metadata are size-limited and safely exposed', () 
   assert.equal(validBio('Available for a chat'), true);
   assert.equal(validBio('x'.repeat(161)), false);
   assert.equal(validBio('<script>alert(1)</script>'), false);
+  assert.equal(validStoredAvatarUrl('https://attacker.example/storage/v1/object/public/fbchat-profiles/00000000-0000-4000-8000-000000000000.jpg'), false);
   const profile = publicProfile({
     id: 'abc', username: 'maddy', display_name: 'Maddy', public_key: { kty: 'EC' },
     key_backup: { ciphertext: 'secret' }, created_at: '2026-01-01'
   }, { avatar_url: 'data:image/jpeg;base64,Zm9v', bio: 'Hello' });
-  assert.equal(profile.avatar_url, 'data:image/jpeg;base64,Zm9v');
+  assert.equal(profile.avatar_url, null, 'image binaries must not be carried inside JWT metadata');
   assert.equal(profile.bio, 'Hello');
   assert.equal(Object.hasOwn(profile, 'key_backup'), false);
 });

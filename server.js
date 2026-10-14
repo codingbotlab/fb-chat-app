@@ -170,7 +170,7 @@ async function fetchAuthUsers(page = 1, perPage = 1000) {
   return Array.isArray(body.users) ? body.users : [];
 }
 function normalizeContactPhone(value) {
-  let digits = String(value || '').replace(/\\D/g, '');
+  let digits = String(value || '').replace(/\D/g, '');
   if (digits.startsWith('0091') && digits.length === 14) digits = digits.slice(4);
   else if (digits.startsWith('91') && digits.length === 12) digits = digits.slice(2);
   else if (digits.startsWith('0') && digits.length === 11) digits = digits.slice(1);
@@ -1182,13 +1182,24 @@ app.post('/api/contacts/match', requireAuth, async (req, res, next) => {
     const matches = [];
     for (const item of candidates) {
       const row = profilesById.get(item.accountId);
-      if (!row) continue;
       const account = accountsById.get(item.accountId);
-      const metadata = metadataById.get(item.accountId) || account?.user_metadata || {};
+      if (!account) continue;
+      const metadata = metadataById.get(item.accountId) || account.user_metadata || {};
+      const contactProfile = row
+        ? publicProfile(row, metadata)
+        : {
+            id: account.id,
+            username: '',
+            display_name: String(metadata.display_name || metadata.full_name || '').trim().slice(0, 40) || 'FB Chat member',
+            public_key: null,
+            created_at: account.created_at || null,
+            avatar_url: null,
+            bio: typeof metadata.bio === 'string' ? metadata.bio.slice(0, 160) : ''
+          };
       matches.push({
         index: item.index,
-        profile: Object.assign({}, publicProfile(row, metadata), {
-          encryptionReady: Boolean(row.public_key)
+        profile: Object.assign({}, contactProfile, {
+          encryptionReady: Boolean(row?.public_key)
         })
       });
     }

@@ -407,8 +407,16 @@ app.get('/api/admin/config', (_req, res) => res.json({
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
-app.get(['/admin-chat', '/admin-chat/'], (_req, res) =>
-  res.sendFile(path.join(__dirname, 'admin', 'index.html')));
+function sendAdminPage(_req, res) {
+  // The WordPress root-site page embeds this dedicated app origin in an iframe.
+  // Allow only the owned root domain to frame the admin login, never arbitrary sites.
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', "frame-ancestors https://fashionbazz.in https://www.fashionbazz.in");
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'admin', 'index.html'));
+}
+app.get(['/admin-chat', '/admin-chat/'], sendAdminPage);
 app.get('/admin-chat/admin.css', (_req, res) =>
   res.sendFile(path.join(__dirname, 'admin', 'admin.css')));
 app.get('/admin-chat/admin.js', (_req, res) =>

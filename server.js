@@ -426,7 +426,10 @@ app.get('/__admin_assets/admin.css', requireAdminHost, (_req, res) =>
 app.get('/__admin_assets/admin.js', requireAdminHost, (_req, res) =>
   res.sendFile(path.join(__dirname, 'admin', 'admin.js')));
 app.use((req, res, next) => {
-  if (requestHost(req) === ADMIN_HOST) {
+  const host = requestHost(req);
+  if (host === ADMIN_HOST) {
+    if (req.path.startsWith('/api/admin/') || req.path === '/api/admin' ||
+        req.path.startsWith('/__admin_assets/')) return next();
     return res.status(404).type('text/plain').send('Not found');
   }
   if (req.path.startsWith('/api/admin') || req.path.startsWith('/__admin_assets/')) {

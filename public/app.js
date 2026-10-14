@@ -1090,7 +1090,7 @@
     $('#remoteCallPlaceholder').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').srcObject = null;
     try {
       localStream = await acquireCallMedia(currentCallKind);
-      $('#localCallVideo').srcObject = localStream; $('#localCallVideo').hidden = currentCallKind !== 'video';
+      $('#localCallVideo').srcObject = localStream; $('#localCallVideo').classList.add('front-camera'); $('#localCallVideo').hidden = currentCallKind !== 'video';
       setupPeerConnection(); setCallControlState(); setCallAudioRoute(true);
       $('#remoteCallVideo').srcObject = null;
       showCallUi(true); callStatus('Calling…'); startCallClock(); startCallTone('ringback');
@@ -1119,7 +1119,7 @@
       $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + (call.displayName || call.from);
       $('#callAvatar').textContent = (call.displayName || call.from).slice(0,1).toUpperCase();
       $('#remotePlaceholderAvatar').textContent = (call.displayName || call.from).slice(0,1).toUpperCase();
-      $('#callTimer').hidden = true; $('#localCallVideo').srcObject = localStream;
+      $('#callTimer').hidden = true; $('#localCallVideo').srcObject = localStream; $('#localCallVideo').classList.add('front-camera');
       $('#localCallVideo').hidden = currentCallKind !== 'video'; $('#remoteCallVideo').srcObject = null; $('#remoteCallVideo').hidden = true;
       $('#remoteCallPlaceholder').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').srcObject = null;
       setupPeerConnection(); setCallControlState(); setCallAudioRoute(true); showCallUi(true); callStatus('Connecting…'); startCallClock();
@@ -1168,7 +1168,7 @@
     if (localStream) localStream.getTracks().forEach(track => track.stop());
     localStream = null; remoteMediaStream = null; remoteVideoStream = null; pendingRemoteIceCandidates = [];
     ['localCallVideo','remoteCallVideo','remoteCallAudio'].forEach(id => { const el = $('#'+id); if (el) { try { el.pause?.(); } catch {} el.srcObject = null; } });
-    $('#remoteCallVideo').hidden = true; $('#remoteCallPlaceholder').hidden = true; $('#callTimer').hidden = true;
+    $('#localCallVideo').classList.remove('front-camera'); $('#remoteCallVideo').hidden = true; $('#remoteCallPlaceholder').hidden = true; $('#callTimer').hidden = true;
     currentCallPeer = null; incomingCall = null; callStartedAt = 0; callConnectedAt = 0;
     try { if (window.FBChatNative?.endCallAudio) window.FBChatNative.endCallAudio(); } catch {}
     showCallUi(false);
@@ -1214,7 +1214,7 @@
       await sender.replaceTrack(nextTrack);
       const previous = localStream.getVideoTracks()[0]; if (previous) { localStream.removeTrack(previous); previous.stop(); }
       localStream.addTrack(nextTrack); $('#localCallVideo').srcObject = localStream;
-      isFrontCamera = !isFrontCamera; isCameraDisabled = false; setCallControlState();
+      isFrontCamera = !isFrontCamera; $('#localCallVideo').classList.toggle('front-camera', isFrontCamera); isCameraDisabled = false; setCallControlState();
       fresh.getTracks().filter(track => track !== nextTrack).forEach(track => track.stop());
     } catch (error) { toast('Could not switch camera: ' + (error.message || 'camera unavailable'), 4500); }
   }

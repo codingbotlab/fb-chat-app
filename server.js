@@ -1321,7 +1321,11 @@ io.on('connection', (socket) => {
   const oldId = online.get(user.id);
   if (oldId && oldId !== socket.id) {
     const oldSocket = io.sockets.sockets.get(oldId);
-    if (oldSocket) oldSocket.disconnect(true);
+    if (oldSocket) {
+      // Notify the previous device before disconnecting it so its UI clears the old session.
+      oldSocket.emit('session:replaced', { reason: 'This account was opened on another device.' });
+      oldSocket.disconnect(true);
+    }
   }
   online.set(user.id, socket.id);
   socketUsers.set(socket.id, user);

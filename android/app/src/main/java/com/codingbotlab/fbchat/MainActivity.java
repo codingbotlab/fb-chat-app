@@ -15,6 +15,8 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -52,6 +54,7 @@ public final class MainActivity extends Activity {
     private static final String APP_URL = "https://chat.fashionbazz.in";
     private static final String APP_HOST = "chat.fashionbazz.in";
     private static final String CHANNEL_ID = "fbchat_messages";
+    private static final String CALLS_CHANNEL_ID = "fbchat_calls";
     private static final String PREFS = "fbchat_native_push";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 7102;
     private static final int CALL_PERMISSION_REQUEST = 7103;
@@ -68,6 +71,11 @@ public final class MainActivity extends Activity {
     private BroadcastReceiver updateDownloadReceiver;
     private long pendingUpdateDownloadId = -1L;
     private String pendingUpdateUrl;
+    private Ringtone callRingtone;
+    private AudioManager callAudioManager;
+    private int previousAudioMode = AudioManager.MODE_NORMAL;
+    private boolean previousSpeakerphoneOn;
+    private boolean callAudioRouteChanged;
 
     public static boolean isAppVisible() {
         return appVisible;
@@ -445,17 +453,84 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
+        AudioAttributes notificationAudio = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID, "Messages", NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("New encrypted FB Chat messages");
         channel.enableVibration(true);
         channel.setVibrationPattern(new long[]{0, 250, 120, 250});
-        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build());
+        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), notificationAudio);
         manager.createNotificationChannel(channel);
+
+        AudioAttributes callAudio = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
+        NotificationChannel calls = new NotificationChannel(
+                CALLS_CHANNEL_ID, "Incoming calls", NotificationManager.IMPORTANCE_HIGH);
+        calls.setDescription("Incoming FB Chat voice and video calls");
+        calls.enableVibration(true);
+        calls.setVibrationPattern(new long[]{0, 650, 250, 650, 250, 650});
+        calls.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), callAudio);
+        manager.createNotificationChannel(calls);
+    }
+
+    private void startCallTone(String kind) {
+        runOnUiThread(() -> {
+            stopCallToneInternal();
+            Uri toneUri = RingtoneManager.getDefaultUri(
+                    "incoming".equals(kind) ? RingtoneManager.TYPE_RINGTONE : RingtoneManager.TYPE_NOTIFICATION);
+            callRingtone = RingtoneManager.getRingtone(getApplicationContext(), toneUri);
+            if (callRingtone == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                callRingtone.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage("incoming".equals(kind) ? AudioAttributes.USAGE_NOTIFICATION_RINGTONE : AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) callRingtone.setLooping(true);
+            try { callRingtone.play(); } catch (RuntimeException error) {
+                android.util.Log.w("FBChatCall", "Could not play call tone", error);
+            }
+        });
+    }
+
+    private void stopCallToneInternal() {
+        if (callRingtone != null) {
+            try { if (callRingtone.isPlaying()) callRingtone.stop(); } catch (RuntimeException ignored) {}
+            callRingtone = null;
+        }
+    }
+
+    private void stopCallTone() {
+        runOnUiThread(this::stopCallToneInternal);
+    }
+
+    private void setCallAudioRoute(boolean speaker) {
+        runOnUiThread(() -> {
+            AudioManager manager = getSystemService(AudioManager.class);
+            if (manager == null) return;
+            if (!callAudioRouteChanged) {
+                callAudioManager = manager;
+                previousAudioMode = manager.getMode();
+                previousSpeakerphoneOn = manager.isSpeakerphoneOn();
+                callAudioRouteChanged = true;
+            }
+            manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            manager.setSpeakerphoneOn(speaker);
+        });
+    }
+
+    private void endCallAudio() {
+        runOnUiThread(() -> {
+            stopCallToneInternal();
+            if (callAudioRouteChanged && callAudioManager != null) {
+                try { callAudioManager.setSpeakerphoneOn(previousSpeakerphoneOn); } catch (RuntimeException ignored) {}
+                try { callAudioManager.setMode(previousAudioMode); } catch (RuntimeException ignored) {}
+            }
+            callAudioManager = null;
+            callAudioRouteChanged = false;
+        });
     }
 
     private void requestNotificationPermission() {
@@ -634,6 +709,26 @@ public final class MainActivity extends Activity {
             } catch (org.json.JSONException error) {
                 return "{}";
             }
+        }
+
+        @JavascriptInterface
+        public void startCallTone(String kind) {
+            MainActivity.this.startCallTone(kind == null ? "ringback" : kind);
+        }
+
+        @JavascriptInterface
+        public void stopCallTone() {
+            MainActivity.this.stopCallTone();
+        }
+
+        @JavascriptInterface
+        public void setCallAudioRoute(boolean speaker) {
+            MainActivity.this.setCallAudioRoute(speaker);
+        }
+
+        @JavascriptInterface
+        public void endCallAudio() {
+            MainActivity.this.endCallAudio();
         }
 
         @JavascriptInterface

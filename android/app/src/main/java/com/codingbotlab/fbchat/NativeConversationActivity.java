@@ -9,15 +9,16 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
-import android.view.inputmethod.InputMethodManager;
-import android.content.Context;
+import android.view.inputmethod.EditorInfo;
 import android.widget.*;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.client.Ack;
-import java.net.URISyntaxException;
+import android.util.Base64;
+import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -29,182 +30,131 @@ public final class NativeConversationActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private NativeApi.Session session;
-    private JSONObject me, profile, privateKey, peer;
+    private JSONObject profile, peer;
     private Socket socket;
-    private LinearLayout root, messages;
+    private LinearLayout messages;
     private EditText composer;
     private TextView status;
     private String username="", displayName="";
     private boolean ready=false;
+    private final SecureRandom random=new SecureRandom();
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
-        username=getIntent().getStringExtra("username");
-        displayName=getIntent().getStringExtra("displayName");
-        if(username==null || username.trim().isEmpty()){finish();return;}
+        getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+        username=getIntent().getStringExtra("username");displayName=getIntent().getStringExtra("displayName");
+        if(username==null||username.trim().isEmpty()){finish();return;}
         android.content.SharedPreferences pref=getSharedPreferences("fbchat_native_session",MODE_PRIVATE);
-        String a=pref.getString("access",""), r=pref.getString("refresh","");
+        String a=pref.getString("access",""),r=pref.getString("refresh","");
         if(a.isEmpty()||r.isEmpty()){finish();return;}
         session=new NativeApi.Session(a,r,pref.getString("email",""),pref.getString("uid",""));
-        buildUi();
-        unlockAndConnect();
+        buildUi();connect();
     }
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
-    private GradientDrawable shape(int color,int radius){
-        GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;
-    }
+    private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     private TextView label(String s,int size,int color,boolean bold){
         TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);
         if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;
     }
     private void buildUi(){
-        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);
-        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(12),dp(8),dp(12),dp(8));
-        TextView back=label("‹",34,GREEN,true);header.addView(back,new LinearLayout.LayoutParams(dp(40),dp(48)));back.setOnClickListener(v->finish());
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);
+        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(10),dp(5),dp(12),dp(5));header.setBackgroundColor(SURFACE);
+        TextView back=label("‹",34,GREEN,true);back.setGravity(Gravity.CENTER);
+        header.addView(back,new LinearLayout.LayoutParams(dp(42),dp(52)));back.setOnClickListener(v->finish());
         LinearLayout names=new LinearLayout(this);names.setOrientation(LinearLayout.VERTICAL);
-        names.addView(label(displayName==null||displayName.isEmpty()?("@"+username):displayName,17,TEXT,true));
-        status=label("Connecting securely…",12,MUTED,false);names.addView(status);
-        header.addView(names,new LinearLayout.LayoutParams(0,-2,1));root.addView(header);
+        names.addView(label(displayName==null||displayName.isEmpty()?"@"+username:displayName,17,TEXT,true));
+        status=label("Connecting…",12,MUTED,false);names.addView(status);
+        header.addView(names,new LinearLayout.LayoutParams(0,-2,1));
+        TextView more=label("⋮",26,TEXT,true);more.setGravity(Gravity.CENTER);header.addView(more,new LinearLayout.LayoutParams(dp(36),dp(48)));
+        more.setOnClickListener(v->new android.app.AlertDialog.Builder(this).setItems(new String[]{"View contact","Clear this screen"},(dialog,which)->{
+            if(which==0)new android.app.AlertDialog.Builder(this).setTitle(displayName).setMessage("@"+username).setPositiveButton("OK",null).show();
+            else messages.removeAllViews();
+        }).show());
+        root.addView(header,new LinearLayout.LayoutParams(-1,dp(58)));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
         messages=new LinearLayout(this);messages.setOrientation(LinearLayout.VERTICAL);messages.setPadding(dp(12),dp(12),dp(12),dp(12));
         scroll.addView(messages);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout sendBar=new LinearLayout(this);sendBar.setGravity(Gravity.CENTER_VERTICAL);sendBar.setPadding(dp(8),dp(8),dp(8),dp(8));
-        composer=new EditText(this);composer.setSingleLine(true);composer.setTextColor(TEXT);composer.setHintTextColor(MUTED);
-        composer.setHint("Message");composer.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        composer.setBackground(shape(SURFACE,24));composer.setPadding(dp(16),0,dp(16),0);
-        sendBar.addView(composer,new LinearLayout.LayoutParams(0,dp(48),1));
-        Button send=new Button(this);send.setText("➤");send.setTextColor(Color.WHITE);send.setBackground(shape(GREEN,24));
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(48),dp(48));sp.leftMargin=dp(8);sendBar.addView(send,sp);
-        send.setOnClickListener(v->sendMessage());root.addView(sendBar);setContentView(root);
+        LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(8),dp(7),dp(8),dp(7));bar.setBackgroundColor(SURFACE);
+        composer=new EditText(this);composer.setSingleLine(false);composer.setMaxLines(4);composer.setTextColor(TEXT);composer.setHintTextColor(MUTED);
+        composer.setHint("Message");composer.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        composer.setImeOptions(EditorInfo.IME_ACTION_SEND);composer.setBackground(shape(Color.rgb(42,57,64),24));composer.setPadding(dp(16),dp(8),dp(16),dp(8));
+        bar.addView(composer,new LinearLayout.LayoutParams(0,dp(48),1));
+        TextView send=label("➤",23,Color.WHITE,true);send.setGravity(Gravity.CENTER);send.setBackground(shape(GREEN,28));
+        LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(dp(48),dp(48));sl.leftMargin=dp(8);bar.addView(send,sl);
+        send.setOnClickListener(v->sendMessage());
+        composer.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEND){sendMessage();return true;}return false;});
+        root.addView(bar,new LinearLayout.LayoutParams(-1,-2));setContentView(root);
     }
-    private void unlockAndConnect(){
-        status.setText("Loading secure account…");
+    private void connect(){
+        status.setText("Connecting…");
         worker.execute(()->{
             try{
-                JSONObject account=NativeApi.me(session), mine=account.optJSONObject("profile");
-                if(mine==null)throw new Exception("Account profile was missing.");
-                JSONObject pub=mine.optJSONObject("public_key"), backup=account.optJSONObject("key_backup");
-                if(pub==null&&backup==null){main.post(()->showPasswordPrompt(account,mine,pub,backup));return;}
-                if(pub==null||backup==null)throw new Exception("This account has incomplete encryption-key data. Stop here to protect old messages.");
-                JSONObject local=NativeKeyStore.load(this,mine.getString("id"));
-                if(local!=null&&NativeCrypto.fingerprint(local).equals(NativeCrypto.fingerprint(pub))){
-                    main.post(()->{me=account;profile=mine;privateKey=local;connectSocket();});return;
-                }
-                main.post(()->showPasswordPrompt(account,mine,pub,backup));
-            }catch(Exception e){main.post(()->showKeyError(e.getMessage()));}
+                JSONObject account=NativeApi.me(session),mine=account.optJSONObject("profile");
+                if(mine==null)throw new Exception("Could not load your account.");
+                main.post(()->{profile=mine;connectSocket();});
+            }catch(Exception e){main.post(()->status.setText("Connection failed. Please sign in again."));}
         });
-    }
-    private void showPasswordPrompt(JSONObject account,JSONObject mine,JSONObject pub,JSONObject backup){
-        EditText password=new EditText(this);password.setSingleLine(true);password.setHint("Account password");
-        password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        new android.app.AlertDialog.Builder(this).setTitle("Unlock encrypted messages")
-            .setMessage("Enter your account password once on this device. The key will be protected by Android Keystore; your password is not saved.")
-            .setView(password).setCancelable(false).setNegativeButton("Cancel",(d,w)->finish())
-            .setPositiveButton("Unlock",(d,w)->{
-                String value=password.getText().toString();if(value.isEmpty()){showKeyError("Enter your account password.");return;}
-                unlockWithPassword(account,mine,pub,backup,value);
-            }).show();
-    }
-    private void unlockWithPassword(JSONObject account,JSONObject mine,JSONObject pub,JSONObject backup,String password){
-        status.setText("Unlocking encrypted key…");
-        worker.execute(()->{
-            try{
-                JSONObject unlocked;
-                if(pub==null&&backup==null){
-                    JSONObject created=NativeCrypto.create(password);
-                    NativeApi.saveCrypto(session,created.getJSONObject("public_key"),created.getJSONObject("key_backup"));
-                    mine.put("public_key",created.getJSONObject("public_key"));unlocked=created.getJSONObject("private_key");
-                }else unlocked=NativeCrypto.unlock(backup,password,pub);
-                NativeKeyStore.save(this,mine.getString("id"),unlocked);
-                main.post(()->{me=account;profile=mine;privateKey=unlocked;connectSocket();});
-            }catch(Exception e){main.post(()->showKeyError(e.getMessage()));}
-        });
-    }
-    private void showKeyError(String message){
-        String detail=message==null||message.isEmpty()?"Could not unlock encryption key.":message;status.setText(detail);
-        new android.app.AlertDialog.Builder(this).setTitle("Secure chat unavailable").setMessage(detail)
-            .setPositiveButton("Try again",(x,y)->unlockAndConnect()).setNegativeButton("Back",(x,y)->finish()).show();
     }
     private void connectSocket(){
         try{
-            IO.Options opts=new IO.Options();Map<String,String> auth=new HashMap<>();
-            auth.put("token",session.accessToken);opts.auth=auth;opts.transports=new String[]{"websocket","polling"};
-            socket=IO.socket(NativeApi.BASE,opts);
+            IO.Options opts=new IO.Options();Map<String,String> auth=new HashMap<>();auth.put("token",session.accessToken);
+            opts.auth=auth;opts.transports=new String[]{"websocket","polling"};socket=IO.socket(NativeApi.BASE,opts);
             socket.on(Socket.EVENT_CONNECT,args->main.post(()->{
-                status.setText("Online • encrypted");ready=true;
-                try{JSONObject request=new JSONObject();request.put("peer",username);socket.emit("chat:open",request);}
-                catch(Exception ignored){}
+                ready=true;status.setText("online");
+                try{JSONObject req=new JSONObject();req.put("peer",username);socket.emit("chat:open",req);}catch(Exception ignored){}
             }));
             socket.on("chat:history",args->{if(args.length>0&&args[0] instanceof JSONObject)main.post(()->showHistory((JSONObject)args[0]));});
-            socket.on("chat:message",args->{if(args.length>0&&args[0] instanceof JSONObject)main.post(()->appendEncrypted((JSONObject)args[0]));});
-            socket.on("chat:error",args->main.post(()->status.setText(args.length>0?String.valueOf(args[0]):"Chat error")));
-            socket.on(Socket.EVENT_CONNECT_ERROR,args->main.post(()->status.setText("Connection error. Check internet and sign in again.")));
+            socket.on("chat:message",args->{if(args.length>0&&args[0] instanceof JSONObject)main.post(()->appendMessage((JSONObject)args[0]));});
+            socket.on("chat:error",args->main.post(()->status.setText(args.length>0?String.valueOf(args[0]):"Could not connect.")));
+            socket.on(Socket.EVENT_CONNECT_ERROR,args->main.post(()->status.setText("Offline • reconnecting…")));
+            socket.on("chat:receipts",args->main.post(()->status.setText("online")));
             socket.connect();
-        }catch(Exception e){status.setText("Could not start secure connection: "+e.getMessage());}
+        }catch(Exception e){status.setText("Could not connect.");}
     }
     private void showHistory(JSONObject data){
         JSONObject person=data.optJSONObject("peer");JSONArray history=data.optJSONArray("messages");
         if(person==null||history==null)return;
-        peer=person;messages.removeAllViews();status.setText("Online • encrypted");
-        worker.execute(()->{
-            for(int i=0;i<history.length();i++){
-                JSONObject m=history.optJSONObject(i);if(m==null)continue;
-                try{
-                    String raw=NativeCrypto.decrypt(privateKey,peer.optJSONObject("public_key"),
-                        m.getString("sender_id"),m.getString("recipient_id"),m);
-                    JSONObject content=new JSONObject(raw);String text=content.optString("text","[Unsupported message]");
-                    boolean mine=profile.optString("id").equals(m.optString("sender_id"));
-                    main.post(()->addBubble(text,mine));
-                }catch(Exception e){main.post(()->addBubble("[Unable to decrypt this message]",false));}
-            }
-            main.post(()->{try{JSONObject read=new JSONObject();read.put("peer",username);socket.emit("chat:read",read);}catch(Exception ignored){}});
-        });
+        peer=person;messages.removeAllViews();status.setText(ready?"online":"offline");
+        for(int i=0;i<history.length();i++){JSONObject m=history.optJSONObject(i);if(m!=null)appendMessage(m);}
     }
-    private void appendEncrypted(JSONObject m){
-        if(peer==null||profile==null)return;
-        worker.execute(()->{
-            try{
-                String raw=NativeCrypto.decrypt(privateKey,peer.optJSONObject("public_key"),
-                    m.getString("sender_id"),m.getString("recipient_id"),m);
-                JSONObject content=new JSONObject(raw);String value=content.optString("text","[Unsupported message]");
-                main.post(()->addBubble(value,profile.optString("id").equals(m.optString("sender_id"))));
-                if(!profile.optString("id").equals(m.optString("sender_id"))){
-                    try{JSONObject read=new JSONObject();read.put("peer",username);socket.emit("chat:read",read);}catch(Exception ignored){}
-                }
-            }catch(Exception e){main.post(()->addBubble("[Unable to decrypt this message]",false));}
-        });
+    private String plainText(JSONObject message){
+        String raw=message.optString("ciphertext","");
+        if(raw.startsWith("PLAIN:")){
+            String value=raw.substring(6);
+            try{JSONObject content=new JSONObject(value);if(content.optInt("version")==1)return content.optString("text",value);}catch(Exception ignored){}
+            return value;
+        }
+        return "[Older encrypted message]";
+    }
+    private void appendMessage(JSONObject message){
+        if(profile==null)return;
+        String value=plainText(message);
+        boolean mine=profile.optString("id").equals(message.optString("sender_id"));
+        addBubble(value,mine);
     }
     private void addBubble(String value,boolean mine){
-        TextView bubble=label(value,16,TEXT,false);bubble.setPadding(dp(14),dp(10),dp(14),dp(10));
-        bubble.setBackground(shape(mine?Color.rgb(0,92,75):SURFACE,16));
+        TextView bubble=label(value,16,TEXT,false);bubble.setMaxWidth((int)(getResources().getDisplayMetrics().widthPixels*.78));
+        bubble.setPadding(dp(14),dp(10),dp(14),dp(10));bubble.setBackground(shape(mine?Color.rgb(0,92,75):SURFACE,16));
         LinearLayout line=new LinearLayout(this);line.setGravity(mine?Gravity.RIGHT:Gravity.LEFT);
         line.addView(bubble,new LinearLayout.LayoutParams(-2,-2));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(8);messages.addView(line,lp);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(7);messages.addView(line,lp);
     }
     private void sendMessage(){
-        if(!ready||peer==null||privateKey==null){status.setText("Wait for the encrypted connection.");return;}
+        if(!ready||socket==null||peer==null){status.setText("Connecting…");return;}
         String value=composer.getText().toString().trim();if(value.isEmpty())return;
-        composer.setText("");status.setText("Sending securely…");
-        worker.execute(()->{
-            try{
-                JSONObject content=new JSONObject();content.put("version",1);content.put("text",value);
-                JSONObject encrypted=NativeCrypto.encrypt(privateKey,peer.getJSONObject("public_key"),
-                    profile.getString("id"),peer.getString("id"),content.toString());
-                JSONObject payload=new JSONObject();payload.put("to",username);
-                payload.put("ciphertext",encrypted.getString("ciphertext"));payload.put("iv",encrypted.getString("iv"));
-                main.post(()->{
-                    if(socket==null||!socket.connected()){composer.setText(value);status.setText("Offline. Message not sent.");return;}
-                    socket.emit("chat:send",payload,(Ack)args->{
-                        JSONObject result=args.length>0&&args[0] instanceof JSONObject?(JSONObject)args[0]:new JSONObject();
-                        main.post(()->{
-                            if(result.has("error")){composer.setText(value);status.setText(result.optString("error","Send failed."));return;}
-                            addBubble(value,true);status.setText("Online • encrypted");
-                        });
-                    });
-                });
-            }catch(Exception e){main.post(()->{composer.setText(value);status.setText("Encryption failed. Message not sent.");});}
-        });
+        composer.setText("");
+        try{
+            JSONObject payload=new JSONObject();payload.put("to",username);payload.put("ciphertext","PLAIN:"+value);
+            byte[] iv=new byte[12];random.nextBytes(iv);
+            payload.put("iv",Base64.encodeToString(iv,Base64.URL_SAFE|Base64.NO_WRAP|Base64.NO_PADDING));
+            socket.emit("chat:send",payload,(Ack)args->main.post(()->{
+                JSONObject result=args.length>0&&args[0] instanceof JSONObject?(JSONObject)args[0]:new JSONObject();
+                if(result.has("error")){status.setText(result.optString("error","Message failed."));composer.setText(value);return;}
+                JSONObject saved=result.optJSONObject("message");
+                if(saved!=null)appendMessage(saved);else addBubble(value,true);
+                status.setText("online");
+            }));
+        }catch(Exception e){composer.setText(value);status.setText("Message could not be sent.");}
     }
     @Override protected void onDestroy(){
         ready=false;if(socket!=null){socket.disconnect();socket.close();socket=null;}

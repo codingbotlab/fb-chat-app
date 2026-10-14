@@ -37,6 +37,7 @@ public final class NativeHomeActivity extends Activity {
     private TextView status;
     private NativeApi.Session session;
     private JSONObject me;
+    private JSONArray lastChats=new JSONArray();
     private boolean busy=false;
 
     @Override protected void onCreate(Bundle state) {
@@ -71,13 +72,19 @@ public final class NativeHomeActivity extends Activity {
     private void base(String subtitle){
         root=vertical();root.setBackgroundColor(BG);root.setPadding(dp(20),dp(12),dp(20),dp(14));
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
-        top.addView(text("FB Chat",28,GREEN,true),new LinearLayout.LayoutParams(0,dp(58),1));
+        top.addView(text("FB Chat",27,GREEN,true),new LinearLayout.LayoutParams(0,dp(54),1));
+        if(session!=null){
+            TextView menu=text("⋮",27,TEXT,true);menu.setGravity(Gravity.CENTER);
+            top.addView(menu,new LinearLayout.LayoutParams(dp(42),dp(50)));
+            menu.setOnClickListener(v->openMenu());
+        }
         root.addView(top);
-        root.addView(text(subtitle,14,MUTED,false),new LinearLayout.LayoutParams(-1,dp(30)));
+        root.addView(text(subtitle,14,MUTED,false),new LinearLayout.LayoutParams(-1,dp(26)));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
-        body=vertical();body.setPadding(0,dp(18),0,dp(12));scroll.addView(body);
+        body=vertical();body.setPadding(0,dp(8),0,dp(8));scroll.addView(body);
         root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        status=text("",13,Color.rgb(255,170,120),false);root.addView(status,new LinearLayout.LayoutParams(-1,dp(42)));
+        status=text("",12,Color.rgb(255,170,120),false);root.addView(status,new LinearLayout.LayoutParams(-1,dp(24)));
+        if(session!=null) root.addView(bottomNavigation(),new LinearLayout.LayoutParams(-1,dp(62)));
         setContentView(root);
     }
     private void showLogin(){
@@ -135,14 +142,8 @@ public final class NativeHomeActivity extends Activity {
         catch(Exception e){main.post(()->status.setText("Could not load chats: "+e.getMessage()));}
     });}
     private void showChats(JSONArray chats){
-        base("Your account • Native Android");
-        JSONObject profile=me==null?new JSONObject():me.optJSONObject("profile");
-        String display=profile==null?"":profile.optString("display_name","");
-        String username=profile==null?"":profile.optString("username","");
-        LinearLayout card=vertical();card.setPadding(dp(16),dp(14),dp(16),dp(14));card.setBackground(shape(SURFACE,18));
-        card.addView(text(display.isEmpty()?"Your account":display,19,TEXT,true),new LinearLayout.LayoutParams(-1,dp(34)));
-        card.addView(text(username.isEmpty()?"":("@"+username),14,MUTED,false),new LinearLayout.LayoutParams(-1,dp(28)));
-        body.addView(card,new LinearLayout.LayoutParams(-1,-2));
+        lastChats=chats==null?new JSONArray():chats;
+        base("Chats");
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
         heading.addView(text("Chats",21,TEXT,true),new LinearLayout.LayoutParams(0,dp(58),1));
         Button refresh=button("New chat");heading.addView(refresh,new LinearLayout.LayoutParams(dp(108),dp(42)));
@@ -170,16 +171,7 @@ public final class NativeHomeActivity extends Activity {
                 row.setOnClickListener(v->{Intent intent=new Intent(this,NativeConversationActivity.class);intent.putExtra("username",peer.optString("username",""));intent.putExtra("displayName",name);startActivity(intent);});
             }
         }
-        LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
-        Button contacts=button("Contacts");Button profileButton=button("Profile");
-        LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,dp(48),1);ap.rightMargin=dp(8);actions.addView(contacts,ap);
-        actions.addView(profileButton,new LinearLayout.LayoutParams(0,dp(48),1));
-        contacts.setOnClickListener(v->requestContacts());
-        profileButton.setOnClickListener(v->showProfile());
-        LinearLayout.LayoutParams actionLp=new LinearLayout.LayoutParams(-1,dp(52));actionLp.topMargin=dp(12);body.addView(actions,actionLp);
-        Button signOut=button("Sign out");LinearLayout.LayoutParams so=new LinearLayout.LayoutParams(-1,dp(48));so.topMargin=dp(8);body.addView(signOut,so);
-        signOut.setOnClickListener(v->{session=null;me=null;getSharedPreferences(PREFS,MODE_PRIVATE).edit().clear().apply();showLogin();});
-        status.setText("Native chat list and encrypted messaging are available. More native features are being migrated.");
+        status.setText("");
     }
     private void showProfile(){
         base("Profile & settings");
@@ -187,13 +179,61 @@ public final class NativeHomeActivity extends Activity {
         body.addView(text(p==null?"Your profile":p.optString("display_name","Your profile"),24,TEXT,true),new LinearLayout.LayoutParams(-1,dp(56)));
         body.addView(text(p==null?"":("@"+p.optString("username","")),15,MUTED,false),new LinearLayout.LayoutParams(-1,dp(38)));
         body.addView(text("Account: "+session.email,14,MUTED,false),new LinearLayout.LayoutParams(-1,dp(44)));
-        body.addView(text("Encryption keys are protected with Android Keystore on this device. Native profile editing, photo updates and contact matching are still being migrated.",14,TEXT,false),new LinearLayout.LayoutParams(-1,dp(96)));
+        body.addView(text("Simple chat mode is enabled. Messages are stored as readable text on the server. Profile editing and photo updates are being migrated.",14,TEXT,false),new LinearLayout.LayoutParams(-1,dp(96)));
         Button back=button("Back to chats");body.addView(back,new LinearLayout.LayoutParams(-1,dp(50)));back.setOnClickListener(v->showChats());
     }
     private void requestContacts(){
         if(checkSelfPermission(Manifest.permission.READ_CONTACTS)==PackageManager.PERMISSION_GRANTED){
             Toast.makeText(this,"Contacts permission is enabled. Native contact matching is next.",Toast.LENGTH_LONG).show();
         }else requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},9101);
+    }
+    private LinearLayout bottomNavigation(){
+        LinearLayout nav=new LinearLayout(this);nav.setGravity(Gravity.CENTER);nav.setBackgroundColor(SURFACE);
+        String[][] tabs={{"Chats","●"},{"Updates","◉"},{"Communities","◎"},{"Calls","☎"}};
+        for(String[] tab:tabs){
+            LinearLayout item=vertical();item.setGravity(Gravity.CENTER);
+            TextView icon=text(tab[1],20,tab[0].equals("Chats")?GREEN:MUTED,true);icon.setGravity(Gravity.CENTER);
+            TextView title=text(tab[0],10,tab[0].equals("Chats")?GREEN:MUTED,true);title.setGravity(Gravity.CENTER);
+            item.addView(icon,new LinearLayout.LayoutParams(-1,dp(28)));item.addView(title,new LinearLayout.LayoutParams(-1,dp(20)));
+            nav.addView(item,new LinearLayout.LayoutParams(0,dp(58),1));
+            item.setOnClickListener(v->showTab(tab[0]));
+        }
+        return nav;
+    }
+    private void showTab(String tab){
+        if("Chats".equals(tab)){showChats(lastChats);return;}
+        base(tab);
+        if("Updates".equals(tab)){
+            body.addView(text("Status updates",22,TEXT,true),new LinearLayout.LayoutParams(-1,dp(46)));
+            body.addView(text("Your friends’ updates will appear here.",15,MUTED,false),new LinearLayout.LayoutParams(-1,dp(52)));
+            Button create=button("Add status");body.addView(create,new LinearLayout.LayoutParams(-1,dp(48)));
+            create.setOnClickListener(v->new android.app.AlertDialog.Builder(this).setTitle("Status updates").setMessage("Photo and text status publishing is not yet connected in the native app.").setPositiveButton("OK",null).show());
+        }else if("Communities".equals(tab)){
+            body.addView(text("Communities",22,TEXT,true),new LinearLayout.LayoutParams(-1,dp(46)));
+            body.addView(text("Your communities and group chats will appear here.",15,MUTED,false),new LinearLayout.LayoutParams(-1,dp(60)));
+        }else{
+            body.addView(text("Calls",22,TEXT,true),new LinearLayout.LayoutParams(-1,dp(46)));
+            body.addView(text("Voice and video call history will appear here.",15,MUTED,false),new LinearLayout.LayoutParams(-1,dp(60)));
+            Button call=button("Start a chat first");body.addView(call,new LinearLayout.LayoutParams(-1,dp(48)));
+            call.setOnClickListener(v->showChats(lastChats));
+        }
+    }
+    private void openMenu(){
+        String[] options={"New chat","Profile & settings","Contacts","Sign out"};
+        new android.app.AlertDialog.Builder(this).setItems(options,(dialog,which)->{
+            if(which==0)startNewChat();else if(which==1)showProfile();else if(which==2)requestContacts();
+            else{session=null;me=null;getSharedPreferences(PREFS,MODE_PRIVATE).edit().clear().apply();showLogin();}
+        }).show();
+    }
+    private void startNewChat(){
+        EditText input=field("Username",InputType.TYPE_CLASS_TEXT);
+        new android.app.AlertDialog.Builder(this).setTitle("New chat").setMessage("Enter the exact username.").setView(input)
+            .setNegativeButton("Cancel",null).setPositiveButton("Open",(dialog,which)->{
+                String handle=input.getText().toString().trim().replace("@","");
+                if(handle.isEmpty()){status.setText("Enter a username.");return;}
+                Intent intent=new Intent(this,NativeConversationActivity.class);
+                intent.putExtra("username",handle);intent.putExtra("displayName","@"+handle);startActivity(intent);
+            }).show();
     }
     @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
 }

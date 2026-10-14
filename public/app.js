@@ -374,17 +374,22 @@
     }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
   async function encryptText(text, peer) {
-    const key = await deriveMessageKey(peer.public_key, me.id, peer.id);
+    // Simple-chat mode: new messages are plain text, not end-to-end encrypted.
+    // Keep a valid IV for the existing message schema; it is not used to encrypt the body.
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const value = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, te.encode(text));
-    return { ciphertext: to64(value), iv: to64(iv) };
+    return { ciphertext: 'PLAIN:' + text, iv: to64(iv) };
   }
   async function decryptText(message, peer) {
+    // Read simple-chat messages from native Android and browser clients.
+    if (typeof message?.ciphertext === 'string' && message.ciphertext.startsWith('PLAIN:')) {
+      return message.ciphertext.slice(6);
+    }
+    // Compatibility for historical encrypted messages created before simple-chat mode.
     try {
       const key = await deriveMessageKey(peer.public_key, message.sender_id, message.recipient_id);
       const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: from64(message.iv) }, key, from64(message.ciphertext));
       return td.decode(plain);
-    } catch { return '[Unable to decrypt on this device]'; }
+    } catch { return '[Older encrypted message: key unavailable on this device]'; }
   }
   function decodeMessageContent(raw) {
     try {

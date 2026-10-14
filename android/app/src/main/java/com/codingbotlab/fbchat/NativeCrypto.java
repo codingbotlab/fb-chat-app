@@ -88,8 +88,7 @@ final class NativeCrypto {
         c.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,iv));
         JSONObject out=new JSONObject(); out.put("iv",encode(iv)); out.put("ciphertext",encode(c.doFinal(bytes(plain)))); return out;
     }
-    private NativeCrypto() {}
-}    private static String fixed(java.math.BigInteger value) {
+    private static String fixed(java.math.BigInteger value) {
         byte[] raw=value.toByteArray();int start=raw.length>32&&raw[0]==0?1:0;
         byte[] out=new byte[32];int count=Math.min(32,raw.length-start);
         System.arraycopy(raw,raw.length-count,out,32-count,count);return encode(out);
@@ -111,3 +110,5 @@ final class NativeCrypto {
         backup.put("iv",encode(iv));backup.put("ciphertext",encode(aes.doFinal(bytes(bundlePlain.toString()))));backup.put("fingerprint",fp);
         JSONObject result=new JSONObject();result.put("public_key",publicJwk);result.put("private_key",privateJwk);result.put("key_backup",backup);return result;
     }
+    private NativeCrypto() {}
+}

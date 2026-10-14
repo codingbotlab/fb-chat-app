@@ -546,6 +546,132 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
     ) });
   } catch (error) { next(error); }
 });
+app.use('/api/admin', requireAdminHost, requireAuth, requireAdminRole);
+
+app.get('/api/admin/overview', async (_req, res, next) => {
+  try {
+    const [users, messages, webPushSubscriptions, androidDevices] = await Promise.all([
+      exactCount('profiles'), exactCount('chat_messages'),
+      exactCount('push_subscriptions'), exactCount('fcm_tokens')
+    ]);
+    const recentProfiles = await db('profiles',
+      'select=id,username,display_name,created_at,public_key&order=created_at.desc&limit=8');
+    const authUsers = await fetchAuthUsers(1, 1000);
+    const authById = new Map(authUsers.map((item) => [item.id, item]));
+    res.json({
+      generatedAt: new Date().toISOString(),
+      service: {
+        status: 'online',
+        connectedUsers: online.size,
+        webPushConfigured: pushConfigured,
+        nativePushConfigured: Boolean(fcmMessaging),
+        adminAllowlistConfigured: ADMIN_EMAILS.size > 0
+      },
+      counts: { users, messages, webPushSubscriptions, androidDevices, onlineNow: online.size },
+      recentUsers: (recentProfiles || []).map((row) => {
+        const account = authById.get(row.id) || {};
+        return {
+          id: row.id, username: row.username, display_name: row.display_name,
+          email: account.email || '', created_at: account.created_at || row.created_at,
+          last_sign_in_at: account.last_sign_in_at || null,
+          encryptionReady: Boolean(row.public_key)
+        };
+      })
+    });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/users', async (req, res, next) => {
+  try {
+    const q = normalize(req.query.q);
+    const page = Math.max(1, Math.min(1000, Number.parseInt(req.query.page, 10) || 1));
+    const authUsers = await fetchAuthUsers(page, 1000);
+    const profileRows = await db('profiles',
+      'select=id,username,display_name,created_at,public_key&order=created_at.desc&limit=1000');
+    const profileById = new Map((profileRows || []).map((item) => [item.id, item]));
+    const items = authUsers.map((account) => {
+      const meta = account.user_metadata || {};
+      const row = profileById.get(account.id);
+      const safe = safeProfileMetadata(meta);
+      return {
+        id: account.id,
+        email: account.email || '',
+        username: row?.username || normalize(meta.username),
+        display_name: row?.display_name || String(meta.display_name || meta.full_name || ''),
+        bio: safe.bio,
+        avatar_url: safe.avatar_url,
+        created_at: account.created_at || row?.created_at || null,
+        last_sign_in_at: account.last_sign_in_at || null,
+        email_confirmed_at: account.email_confirmed_at || null,
+        encryptionReady: Boolean(row?.public_key),
+        banned_until: account.banned_until || null,
+        providers: Array.isArray(account.app_metadata?.providers) ? account.app_metadata.providers : []
+      };
+    }).filter((item) => !q || normalize([
+      item.email, item.username, item.display_name, item.id
+    ].join(' ')).includes(q));
+    res.json({ users: items.slice(0, 200), total: items.length, page, hasMore: authUsers.length === 1000 });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/activity', async (req, res, next) => {
+  try {
+    const rows = await db('chat_messages',
+      'select=id,sender_id,recipient_id,created_at,delivered_at,read_at&order=created_at.desc&limit=100');
+    const ids = [...new Set((rows || []).flatMap((item) => [item.sender_id, item.recipient_id]))];
+    const profiles = ids.length ? await db('profiles',
+      'select=id,username,display_name&id=in.(' + ids.join(',') + ')') : [];
+    const byId = new Map((profiles || []).map((item) => [item.id, item]));
+    const userIds = new Set(ids);
+    const authUsers = await fetchAuthUsers(1, 1000);
+    const byAuthId = new Map(authUsers.filter((item) => userIds.has(item.id)).map((item) => [item.id, item]));
+    res.json({
+      privacy: 'Message bodies and ciphertext are intentionally omitted from this activity view.',
+      activity: (rows || []).map((item) => ({
+        id: item.id,
+        created_at: item.created_at,
+        delivered_at: item.delivered_at,
+        read_at: item.read_at,
+        sender: {
+          username: byId.get(item.sender_id)?.username || 'unknown',
+          display_name: byId.get(item.sender_id)?.display_name || '',
+          email: byAuthId.get(item.sender_id)?.email || ''
+        },
+        recipient: {
+          username: byId.get(item.recipient_id)?.username || 'unknown',
+          display_name: byId.get(item.recipient_id)?.display_name || '',
+          email: byAuthId.get(item.recipient_id)?.email || ''
+        }
+      }))
+    });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/devices', async (_req, res, next) => {
+  try {
+    const [android, web] = await Promise.all([
+      db('fcm_tokens', 'select=id,user_id,platform,device_name,user_agent,created_at,updated_at&order=updated_at.desc&limit=500'),
+      db('push_subscriptions', 'select=id,user_id,user_agent,created_at,updated_at&order=updated_at.desc&limit=500')
+    ]);
+    const ids = [...new Set([...(android || []).map((item) => item.user_id), ...(web || []).map((item) => item.user_id)])];
+    const profileRows = ids.length ? await db('profiles', 'select=id,username,display_name&id=in.(' + ids.join(',') + ')') : [];
+    const byId = new Map((profileRows || []).map((item) => [item.id, item]));
+    res.json({
+      android: (android || []).map((item) => ({
+        kind: 'Android app', username: byId.get(item.user_id)?.username || 'unknown',
+        display_name: byId.get(item.user_id)?.display_name || '',
+        device_name: item.device_name || 'Android device',
+        user_agent: item.user_agent || '', created_at: item.created_at, updated_at: item.updated_at
+      })),
+      web: (web || []).map((item) => ({
+        kind: 'Web / PWA', username: byId.get(item.user_id)?.username || 'unknown',
+        display_name: byId.get(item.user_id)?.display_name || '',
+        user_agent: item.user_agent || '', created_at: item.created_at, updated_at: item.updated_at
+      }))
+    });
+  } catch (error) { next(error); }
+});
+
 app.put('/api/me/crypto', requireAuth, async (req, res, next) => {
   try {
     const key = req.body?.public_key, backup = req.body?.key_backup;

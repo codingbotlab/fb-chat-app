@@ -619,6 +619,11 @@
     }
     handleQueuedNotificationChat();
     void showCallPermissionPrompt();
+    if (window.FBChatNative && typeof window.FBChatNative.checkForAppUpdate !== 'function'
+        && localStorage.getItem(LEGACY_UPDATE_DISMISSED_KEY) !== 'dismissed'
+        && localStorage.getItem(LEGACY_UPDATE_DISMISSED_KEY) !== 'downloaded') {
+      setTimeout(showLegacyAndroidUpdateDialog, 3500);
+    }
   }
   function startSocket() {
     try { socket?.disconnect(); } catch {}
@@ -1087,6 +1092,28 @@
        { label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
   }
   const CALL_PERMISSION_PROMPT_KEY = 'fbchat-call-permission-prompt-v1';
+  const LEGACY_ANDROID_UPDATE_URL = 'https://github.com/codingbotlab/fb-chat-app/releases/latest/download/FBChat-latest.apk';
+  const LEGACY_UPDATE_DISMISSED_KEY = 'fbchat-legacy-update-dismissed-v1';
+  function showLegacyAndroidUpdateDialog() {
+    if (!window.FBChatNative || typeof window.FBChatNative.checkForAppUpdate === 'function') return;
+    if ($('#genericModal') && !$('#genericModal').hidden) {
+      toast('A new Android app version is ready. Open Settings to download it.', 5000);
+      return;
+    }
+    infoModal('One-time Android update required',
+      'This older installation was signed with a previous key that is no longer available, so Android cannot update it in place. Download the new APK, then uninstall this old copy and install the download. Sign in again with your existing account password. Server chat history may be recoverable through the encrypted key backup; device-only drafts and settings may be lost. After this one-time migration, future versions will show an update prompt inside FB Chat.',
+      [
+        { label: 'Download latest APK', className: 'primary', action: () => {
+          localStorage.setItem(LEGACY_UPDATE_DISMISSED_KEY, 'downloaded');
+          $('#genericModal').hidden = true;
+          window.location.href = LEGACY_ANDROID_UPDATE_URL;
+        }},
+        { label: 'Later', action: () => {
+          localStorage.setItem(LEGACY_UPDATE_DISMISSED_KEY, 'dismissed');
+          $('#genericModal').hidden = true;
+        }}
+      ]);
+  }
   function callPermissionToggleKey(kind) { return 'fbchat-call-' + kind + '-enabled'; }
   async function getMediaPermissionStatus(kind) {
     if (window.FBChatNative && typeof window.FBChatNative.getCallPermissionStatus === 'function') {
@@ -1209,8 +1236,12 @@
         }
       },
       ...(nativeApp ? [{
-        label: 'Check for app updates',
+        label: typeof window.FBChatNative.checkForAppUpdate === 'function' ? 'Check for app updates' : 'Download latest Android app',
         action: () => {
+          if (typeof window.FBChatNative.checkForAppUpdate !== 'function') {
+            showLegacyAndroidUpdateDialog();
+            return;
+          }
           $('#genericModal').hidden = true;
           nativeUpdateCheckManual = true;
           try { window.FBChatNative.checkForAppUpdate(); }

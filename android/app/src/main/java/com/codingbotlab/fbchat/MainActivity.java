@@ -22,6 +22,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.provider.ContactsContract;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.SafeBrowsingResponse;
@@ -40,6 +41,7 @@ import android.widget.Toast;
 
 import com.google.firebase.messaging.FirebaseMessaging;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -47,6 +49,8 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -60,6 +64,7 @@ public final class MainActivity extends Activity {
     private static final int CALL_PERMISSION_REQUEST = 7103;
     private static final int UPDATE_SOURCE_PERMISSION_REQUEST = 7104;
     private static final int FILE_CHOOSER_REQUEST = 7105;
+    private static final int CONTACTS_PERMISSION_REQUEST = 7106;
     private static final String LATEST_RELEASE_API = "https://api.github.com/repos/codingbotlab/fb-chat-app/releases/latest";
     private static final int CHROME = Color.rgb(11, 20, 26);
     private static final Pattern USERNAME = Pattern.compile("^[a-z0-9_.]{3,24}$");
@@ -709,6 +714,111 @@ public final class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CALL_PERMISSION_REQUEST) completePendingWebPermissionRequest();
+        if (requestCode == CONTACTS_PERMISSION_REQUEST) {
+            publishContactsPermissionResult(hasAndroidPermission(Manifest.permission.READ_CONTACTS));
+        }
+    }
+
+    private void requestContactsAccess() {
+        if (hasAndroidPermission(Manifest.permission.READ_CONTACTS)) {
+            publishContactsPermissionResult(true);
+            return;
+        }
+        requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, CONTACTS_PERMISSION_REQUEST);
+    }
+
+    private void publishContactsPermissionResult(boolean granted) {
+        runOnUiThread(() -> {
+            WebView target = webView;
+            if (target == null) return;
+            target.evaluateJavascript(
+                    "if(typeof window.fbchatContactsPermissionResult==='function')window.fbchatContactsPermissionResult(" + granted + ");",
+                    null);
+        });
+    }
+
+    private String readContactsForWeb() {
+        if (!hasAndroidPermission(Manifest.permission.READ_CONTACTS)) return "{\\\"error\\\":\\\"PERMISSION_REQUIRED\\\"}";
+        LinkedHashMap<String, JSONObject> contacts = new LinkedHashMap<>();
+        try {
+            String[] phoneProjection = {
+                    ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+            };
+            try (Cursor cursor = getContentResolver().query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    phoneProjection, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC")) {
+                if (cursor != null) {
+                    int idIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID);
+                    int nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
+                    int numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
+                    while (cursor.moveToNext() && contacts.size() < 400) {
+                        String id = cursor.getString(idIndex);
+                        String name = cursor.getString(nameIndex);
+                        String number = cursor.getString(numberIndex);
+                        if (id == null || number == null || number.trim().isEmpty()) continue;
+                        JSONObject item = contacts.get(id);
+                        if (item == null) {
+                            item = new JSONObject();
+                            item.put("name", name == null ? "Contact" : name);
+                            item.put("phones", new JSONArray());
+                            item.put("emails", new JSONArray());
+                            contacts.put(id, item);
+                        } else if (item.optString("name", "Contact").trim().isEmpty() && name != null) {
+                            item.put("name", name);
+                        }
+                        JSONArray phones = item.optJSONArray("phones");
+                        if (phones != null && phones.length() < 5 && !containsJsonString(phones, number)) phones.put(number);
+                    }
+                }
+            }
+            String[] emailProjection = {
+                    ContactsContract.CommonDataKinds.Email.CONTACT_ID,
+                    ContactsContract.CommonDataKinds.Email.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Email.ADDRESS
+            };
+            try (Cursor cursor = getContentResolver().query(
+                    ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+                    emailProjection, null, null, ContactsContract.CommonDataKinds.Email.DISPLAY_NAME + " COLLATE NOCASE ASC")) {
+                if (cursor != null) {
+                    int idIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Email.CONTACT_ID);
+                    int nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Email.DISPLAY_NAME);
+                    int emailIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Email.ADDRESS);
+                    while (cursor.moveToNext()) {
+                        String id = cursor.getString(idIndex);
+                        String name = cursor.getString(nameIndex);
+                        String email = cursor.getString(emailIndex);
+                        if (id == null || email == null || email.trim().isEmpty()) continue;
+                        JSONObject item = contacts.get(id);
+                        if (item == null) {
+                            if (contacts.size() >= 400) continue;
+                            item = new JSONObject();
+                            item.put("name", name == null ? "Contact" : name);
+                            item.put("phones", new JSONArray());
+                            item.put("emails", new JSONArray());
+                            contacts.put(id, item);
+                        }
+                        JSONArray emails = item.optJSONArray("emails");
+                        if (emails != null && emails.length() < 5 && !containsJsonString(emails, email)) emails.put(email);
+                    }
+                }
+            }
+            JSONArray result = new JSONArray();
+            for (JSONObject item : contacts.values()) result.put(item);
+            return result.toString();
+        } catch (Exception error) {
+            android.util.Log.w("FBChatContacts", "Could not read device contacts", error);
+            return "{\\\"error\\\":\\\"READ_FAILED\\\"}";
+        }
+    }
+
+    private boolean containsJsonString(JSONArray values, String value) {
+        if (values == null) return false;
+        for (int i = 0; i < values.length(); i++) {
+            if (value.equalsIgnoreCase(values.optString(i))) return true;
+        }
+        return false;
     }
 
     @Override
@@ -745,6 +855,21 @@ public final class MainActivity extends Activity {
     }
 
     private final class NativePushBridge {
+        @JavascriptInterface
+        public boolean hasContactsPermission() {
+            return hasAndroidPermission(Manifest.permission.READ_CONTACTS);
+        }
+
+        @JavascriptInterface
+        public void requestContactsAccess() {
+            runOnUiThread(MainActivity.this::requestContactsAccess);
+        }
+
+        @JavascriptInterface
+        public String getContacts() {
+            return readContactsForWeb();
+        }
+
         @JavascriptInterface
         public String getFcmToken() {
             SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);

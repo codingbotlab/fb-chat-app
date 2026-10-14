@@ -2264,6 +2264,19 @@
     bottomNavItems.forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.bottomNav)));
     $$('[data-rail]').forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.rail)));
   }
+
+  window.addEventListener('fbchat:qr-session-approved', async (event) => {
+    const password = typeof event.detail?.password === 'string' ? event.detail.password : '';
+    try {
+      await applySession(password);
+      $('#password').value = '';
+      $('#authOverlay').classList.remove('show');
+      toast('QR sign-in complete. This device is now active.');
+    } catch (error) {
+      clearSession();
+      showAuth(error.message || 'Could not unlock this device. Sign in again.');
+    }
+  });
   async function initialize() {
     bindUi(); $('#authOverlay').classList.add('show'); setAuthMode('login');
     try { config = await fetch('/api/config', { cache: 'no-store' }).then((r) => r.json()); }

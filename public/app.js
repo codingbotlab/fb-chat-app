@@ -135,9 +135,9 @@
   function setConnected(value, label = '') {
     connected = Boolean(value);
     $('#connectionDot').classList.toggle('online', connected);
-    $('#inboxSub').textContent = connected ? 'Connected · encrypted chats' : (label || 'Connecting securely…');
+    $('#inboxSub').textContent = connected ? 'Connected Â· encrypted chats' : (label || 'Connecting securelyâ€¦');
     if (activePeer) $('#activeStatus').textContent = connected
-      ? (online(activePeer.id) ? 'online' : 'end-to-end encrypted') : 'Reconnecting…';
+      ? (online(activePeer.id) ? 'online' : 'end-to-end encrypted') : 'Reconnectingâ€¦';
   }
 
   function headers(extra = {}) {
@@ -560,16 +560,16 @@
       const time = document.createElement('time'); time.textContent = dateLabel(last?.created_at || person.created_at);
       row.append(title, time);
       const preview = document.createElement('div'); preview.className = 'lastmsg';
-      preview.textContent = last?.preview || '🔒 End-to-end encrypted';
+      preview.textContent = last?.preview || 'ðŸ”’ End-to-end encrypted';
       body.append(row, preview);
       if (unreadCount) { const badge = document.createElement('span'); badge.className = 'unread'; badge.textContent = String(Math.min(99, unreadCount)); body.appendChild(badge); }
       button.append(avatar, body); button.addEventListener('click', () => openChat(person)); root.appendChild(button); shown++;
     }
     if (!shown) {
       const empty = document.createElement('div'); empty.className = 'list-empty';
-      const icon = document.createElement('div'); icon.className = 'empty-symbol'; icon.textContent = filter === 'unread' ? '✓' : '✳';
+      const icon = document.createElement('div'); icon.className = 'empty-symbol'; icon.textContent = filter === 'unread' ? 'âœ“' : 'âœ³';
       const title = document.createElement('strong'); title.textContent = filter === 'unread' ? 'All caught up' : (query ? 'No matching chats' : 'Your chats will appear here');
-      const note = document.createElement('p'); note.textContent = query ? 'Try a different name or username.' : (filter === 'online' ? 'Nobody in your chat list is online.' : 'Start a secure chat with someone’s username.');
+      const note = document.createElement('p'); note.textContent = query ? 'Try a different name or username.' : (filter === 'online' ? 'Nobody in your chat list is online.' : 'Start a secure chat with someoneâ€™s username.');
       const action = document.createElement('button'); action.type = 'button'; action.className = 'text-action'; action.textContent = 'Start a chat'; action.addEventListener('click', showNewChat);
       empty.append(icon, title, note, action); root.appendChild(empty);
     }
@@ -580,7 +580,7 @@
     const hidden = readStoredSet(hiddenStorageKey()), starred = readStoredSet(starStorageKey());
     const visible = list.filter((message) => !hidden.has(message.id));
     root.replaceChildren();
-    const divider = document.createElement('div'); divider.className = 'daydivider'; divider.textContent = '🔒 END-TO-END ENCRYPTED'; root.appendChild(divider);
+    const divider = document.createElement('div'); divider.className = 'daydivider'; divider.textContent = 'ðŸ”’ END-TO-END ENCRYPTED'; root.appendChild(divider);
     if (!visible.length) {
       const note = document.createElement('div'); note.className = 'systemnote';
       note.textContent = list.length ? 'No visible messages in this chat.' : 'Messages are encrypted on this device. Send a hello to start.';
@@ -623,12 +623,12 @@
       if (body.textContent) bubble.appendChild(body);
       const meta = document.createElement('div'); meta.className = 'bmeta';
       if (starred.has(message.id)) {
-        const star = document.createElement('span'); star.className = 'star-mark'; star.textContent = '★'; star.title = 'Starred message'; meta.appendChild(star);
+        const star = document.createElement('span'); star.className = 'star-mark'; star.textContent = 'â˜…'; star.title = 'Starred message'; meta.appendChild(star);
       }
       const time = document.createElement('span'); time.textContent = clock(message.created_at); meta.appendChild(time);
-      if (message.sender_id === me.id) { const ticks = document.createElement('span'); ticks.className = 'ticks'; ticks.textContent = message.read_at ? '✓✓' : (message.delivered_at ? '✓✓' : '✓'); meta.appendChild(ticks); }
+      if (message.sender_id === me.id) { const ticks = document.createElement('span'); ticks.className = 'ticks'; ticks.textContent = message.read_at ? 'âœ“âœ“' : (message.delivered_at ? 'âœ“âœ“' : 'âœ“'); meta.appendChild(ticks); }
       const more = document.createElement('button'); more.type = 'button'; more.className = 'message-more';
-      more.setAttribute('aria-label', 'Message options'); more.title = 'Message options'; more.textContent = '⋮';
+      more.setAttribute('aria-label', 'Message options'); more.title = 'Message options'; more.textContent = 'â‹®';
       more.addEventListener('click', (event) => { event.stopPropagation(); messageActionsDialog(message); });
       bubble.append(more, meta); root.appendChild(bubble);
     }
@@ -642,16 +642,16 @@
     $('#welcome').hidden = true; $('#convHead').hidden = false; $('#messages').hidden = false; $('#composerWrap').hidden = false;
     $('#activeName').textContent = nameOf(person); setAvatar($('#activeAvatar'), person);
     $('#activeStatus').title = person.bio || '';
-    $('#activeStatus').textContent = connected ? (online(person.id) ? 'online' : 'end-to-end encrypted') : 'Connecting…';
+    $('#activeStatus').textContent = connected ? (online(person.id) ? 'online' : 'end-to-end encrypted') : 'Connectingâ€¦';
     $('#app').classList.add('chat-open'); renderChats();
     try {
       const trust = await checkPeerKey(person);
       if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
       if (!trust.trusted) {
         changedFingerprint = trust.fingerprint; $('#chatDetails').dataset.keyChanged = 'true'; $('#composerWrap').hidden = true;
-        $('#activeStatus').textContent = 'Security warning · key changed'; $('#messages').replaceChildren();
+        $('#activeStatus').textContent = 'Security warning Â· key changed'; $('#messages').replaceChildren();
         const warning = document.createElement('div'); warning.className = 'systemnote warning';
-        warning.textContent = 'This contact’s public key changed. Verify the fingerprint via another trusted channel before accepting it.';
+        warning.textContent = 'This contactâ€™s public key changed. Verify the fingerprint via another trusted channel before accepting it.';
         $('#messages').appendChild(warning); toast('Contact key changed. Sending is blocked until verification.', 6000); return;
       }
       $('#chatDetails').dataset.keyChanged = 'false';
@@ -670,7 +670,7 @@
       if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
       histories.set(person.id, history);
       const last = history[history.length - 1], entry = chats.get(person.id);
-      if (entry && last) entry.lastMessage = Object.assign({}, last, { preview: last.plaintext || '🔒 Encrypted message' });
+      if (entry && last) entry.lastMessage = Object.assign({}, last, { preview: last.plaintext || 'ðŸ”’ Encrypted message' });
       renderHistory(person.id); renderChats();
       if (socket?.connected) { socket.emit('chat:open', { peer: person.username }); socket.emit('chat:read', { peer: person.username }); }
     } catch (error) { if (requestId === chatOpenRequest && activePeer?.id === person.id) toast(error.message || 'Could not load this conversation.'); }
@@ -682,9 +682,9 @@
       if (latest?.ciphertext && latest.iv && item.peer?.public_key) {
         const decoded = decodeMessageContent(await decryptText(latest, item.peer));
         latest.preview = decoded.media
-          ? (decoded.media.mime?.startsWith('image/') ? '📷 Photo' : decoded.media.mime?.startsWith('video/') ? '🎬 Video' : '🎵 Audio')
-          : (decoded.plaintext || '').trim().replace(/\s+/g, ' ').slice(0, 120) || '🔒 Encrypted message';
-      } else latest && (latest.preview = '🔒 Encrypted message');
+          ? (decoded.media.mime?.startsWith('image/') ? 'ðŸ“· Photo' : decoded.media.mime?.startsWith('video/') ? 'ðŸŽ¬ Video' : 'ðŸŽµ Audio')
+          : (decoded.plaintext || '').trim().replace(/\s+/g, ' ').slice(0, 120) || 'ðŸ”’ Encrypted message';
+      } else latest && (latest.preview = 'ðŸ”’ Encrypted message');
       addChat(item.peer, latest);
     }
     renderChats();
@@ -696,10 +696,10 @@
     profile = Object.assign({}, data.profile, { key_backup: data.key_backup || null });
     await ensureEncryption(profile, me.id, password || '');
     $('#authOverlay').classList.remove('show');
-    $('#profileButton').title = nameOf(profile) + ' · profile';
+    $('#profileButton').title = nameOf(profile) + ' Â· profile';
     setAvatar($('#profileButton'), profile);
     $('#profileButton').setAttribute('aria-label', nameOf(profile) + ' profile');
-    setConnected(false, 'Connecting securely…');
+    setConnected(false, 'Connecting securelyâ€¦');
     await loadChats();
     startSocket();
     if (window.FBChatNative) {
@@ -728,7 +728,7 @@
       setAuthMode('login', data.reason || 'This account was opened on another device. Sign in again to continue.');
     });
     socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false, 'Offline · reconnecting'));
+    socket.on('disconnect', () => setConnected(false, 'Offline Â· reconnecting'));
     socket.on('connect_error', (error) => {
       setConnected(false, 'Waiting for secure connection');
       if (error?.message === 'AUTH_REQUIRED') toast('Session expired. Sign in again.');
@@ -808,7 +808,7 @@
     socket.on('chat:typing', (data) => {
       if (activePeer && norm(activePeer.username) === norm(data?.from)) {
         $('#typingLine').hidden = !data.active;
-        $('#activeStatus').textContent = data.active ? 'typing…' : (online(activePeer.id) ? 'online' : 'end-to-end encrypted');
+        $('#activeStatus').textContent = data.active ? 'typingâ€¦' : (online(activePeer.id) ? 'online' : 'end-to-end encrypted');
       }
     });
   }
@@ -819,9 +819,9 @@
     const email = $('#email').value.trim(), password = $('#password').value;
     const username = norm($('#username').value), display = $('#displayName').value.trim();
     if (password.length < 10) { authMessage('Password must be at least 10 characters.', true); return; }
-    if (mode === 'signup' && !USER_RE.test(username)) { authMessage('Username must be 3–24 characters: letters, numbers, dots or underscores.', true); return; }
-    if (mode === 'signup' && (display.length < 2 || display.length > 40 || /[<>]/.test(display))) { authMessage('Display name must be 2–40 characters.', true); return; }
-    busy = true; $('#authSubmit').disabled = true; $('#authSubmit').textContent = mode === 'signup' ? 'Creating account…' : 'Signing in…'; authMessage('');
+    if (mode === 'signup' && !USER_RE.test(username)) { authMessage('Username must be 3â€“24 characters: letters, numbers, dots or underscores.', true); return; }
+    if (mode === 'signup' && (display.length < 2 || display.length > 40 || /[<>]/.test(display))) { authMessage('Display name must be 2â€“40 characters.', true); return; }
+    busy = true; $('#authSubmit').disabled = true; $('#authSubmit').textContent = mode === 'signup' ? 'Creating accountâ€¦' : 'Signing inâ€¦'; authMessage('');
     try {
       if (mode === 'signup') {
         const data = await authRequest('signup', { email, password, data: { username, display_name: display } });
@@ -939,7 +939,7 @@
       heading.textContent = message || 'Find people you know';
       const detail = document.createElement('p');
       detail.textContent = contactImportBusy
-        ? 'Checking which contacts are already using FB Chat…'
+        ? 'Checking which contacts are already using FB Chatâ€¦'
         : 'Allow access to your contacts to match existing users. Everyone else will have an Invite option.';
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'primary'; button.textContent = 'Access contacts';
@@ -1027,7 +1027,7 @@
       renderContactEntries('No contacts to show');
       return;
     }
-    $('#contactsStatus').textContent = 'Matching ' + contactEntries.length + ' contacts…';
+    $('#contactsStatus').textContent = 'Matching ' + contactEntries.length + ' contactsâ€¦';
     contactImportBusy = true;
     renderContactEntries();
     try {
@@ -1042,7 +1042,7 @@
         profile: matches.get(index) || null
       }));
       const found = contactEntries.filter((contact) => contact.profile).length;
-      $('#contactsStatus').textContent = contactEntries.length + ' contacts · ' + found + ' on FB Chat';
+      $('#contactsStatus').textContent = contactEntries.length + ' contacts Â· ' + found + ' on FB Chat';
       renderContactEntries(found ? found + ' people are already on FB Chat.' : 'No matching FB Chat accounts yet.');
     } catch (error) {
       contactImportBusy = false;
@@ -1064,6 +1064,13 @@
       ? contactEntries.length + ' contacts loaded on this device.'
       : 'Your contacts stay on this device; only phone/email values are checked for matches.';
     renderContactEntries();
+    // Native Android contacts permission is requested through MainActivity when the user opens Contacts.
+    // Desktop/browser users are unaffected and can use the explicit import/picker action.
+    if (window.FBChatNative && typeof window.FBChatNative.getContacts === 'function' && !contactEntries.length) {
+      window.setTimeout(() => {
+        if (!$('#contactsModal').hidden && me && !contactEntries.length) void requestContactImport();
+      }, 0);
+    }
     $('#contactsClose').focus();
   }
   function closeContactsPage() {
@@ -1475,13 +1482,13 @@
       if (state === 'connected') {
         callConnectedAt = callConnectedAt || Date.now(); stopCallTone(); callStatus('Connected');
         if ($('#callTimer')) $('#callTimer').hidden = false;
-      } else if (state === 'connecting') callStatus('Connecting…');
-      else if (state === 'disconnected') callStatus('Reconnecting…');
+      } else if (state === 'connecting') callStatus('Connectingâ€¦');
+      else if (state === 'disconnected') callStatus('Reconnectingâ€¦');
       else if (state === 'failed') { callStatus('Connection failed'); toast('Network path failed. Some networks need a TURN relay for video calls.', 5000); }
     };
     peerConnection.oniceconnectionstatechange = () => {
       if (peerConnection?.iceConnectionState === 'failed') callStatus('Network path failed');
-      else if (peerConnection?.iceConnectionState === 'disconnected') callStatus('Reconnecting…');
+      else if (peerConnection?.iceConnectionState === 'disconnected') callStatus('Reconnectingâ€¦');
     };
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
   }
@@ -1513,7 +1520,7 @@
     currentCallPeer = activePeer.username; currentCallKind = kind === 'video' ? 'video' : 'audio';
     callDirection = 'outgoing'; callStartedAt = Date.now(); callConnectedAt = 0;
     isMuted = false; isCameraDisabled = false; isSpeakerEnabled = true; isFrontCamera = true;
-    $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + nameOf(activePeer);
+    $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call Â· ' : 'Voice call Â· ') + nameOf(activePeer);
     $('#callAvatar').textContent = nameOf(activePeer).slice(0,1).toUpperCase();
     $('#remotePlaceholderAvatar').textContent = nameOf(activePeer).slice(0,1).toUpperCase();
     $('#callTimer').hidden = true; $('#remoteCallVideo').hidden = true;
@@ -1523,7 +1530,7 @@
       $('#localCallVideo').srcObject = localStream; $('#localCallVideo').classList.add('front-camera'); $('#localCallVideo').hidden = currentCallKind !== 'video';
       setupPeerConnection(); setCallControlState(); setCallAudioRoute(true);
       $('#remoteCallVideo').srcObject = null;
-      showCallUi(true); callStatus('Calling…'); startCallClock(); startCallTone('ringback');
+      showCallUi(true); callStatus('Callingâ€¦'); startCallClock(); startCallTone('ringback');
       socket.emit('call:invite', { to: currentCallPeer, kind: currentCallKind });
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
@@ -1546,13 +1553,13 @@
     stopCallTone();
     try {
       localStream = await acquireCallMedia(currentCallKind);
-      $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + (call.displayName || call.from);
+      $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call Â· ' : 'Voice call Â· ') + (call.displayName || call.from);
       $('#callAvatar').textContent = (call.displayName || call.from).slice(0,1).toUpperCase();
       $('#remotePlaceholderAvatar').textContent = (call.displayName || call.from).slice(0,1).toUpperCase();
       $('#callTimer').hidden = true; $('#localCallVideo').srcObject = localStream; $('#localCallVideo').classList.add('front-camera');
       $('#localCallVideo').hidden = currentCallKind !== 'video'; $('#remoteCallVideo').srcObject = null; $('#remoteCallVideo').hidden = true;
       $('#remoteCallPlaceholder').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').srcObject = null;
-      setupPeerConnection(); setCallControlState(); setCallAudioRoute(true); showCallUi(true); callStatus('Connecting…'); startCallClock();
+      setupPeerConnection(); setCallControlState(); setCallAudioRoute(true); showCallUi(true); callStatus('Connectingâ€¦'); startCallClock();
       socket.emit('call:accept', { to: currentCallPeer });
       if (call.description) await setRemoteDescriptionAndFlush(call.description);
       for (const candidate of (call.candidates || [])) {
@@ -1612,7 +1619,7 @@
       if (signal.description) incomingCall.description = signal.description;
       if (signal.candidate) (incomingCall.candidates ||= []).push(signal.candidate);
     }
-    $('#callTitle').textContent = (data.kind === 'video' ? 'Incoming video call · ' : 'Incoming voice call · ') + (data.displayName || data.from);
+    $('#callTitle').textContent = (data.kind === 'video' ? 'Incoming video call Â· ' : 'Incoming voice call Â· ') + (data.displayName || data.from);
     $('#callAvatar').textContent = (data.displayName || data.from).slice(0,1).toUpperCase();
     $('#remotePlaceholderAvatar').textContent = (data.displayName || data.from).slice(0,1).toUpperCase();
     callStatus('Incoming call'); startCallTone('incoming');
@@ -1631,7 +1638,7 @@
     if (!track) return toast('Camera controls are available during a video call.', 3000);
     isCameraDisabled = !isCameraDisabled; track.enabled = !isCameraDisabled; setCallControlState();
     const placeholder = $('#remoteCallPlaceholder');
-    if (placeholder) { placeholder.textContent = isCameraDisabled ? 'Your camera is off' : 'Waiting for the other camera…'; placeholder.hidden = !isCameraDisabled; }
+    if (placeholder) { placeholder.textContent = isCameraDisabled ? 'Your camera is off' : 'Waiting for the other cameraâ€¦'; placeholder.hidden = !isCameraDisabled; }
   }
   async function flipCamera() {
     if (!peerConnection || currentCallKind !== 'video' || !navigator.mediaDevices?.getUserMedia) return;
@@ -1665,7 +1672,7 @@
       const direction = item.direction === 'incoming' ? 'Incoming' : 'Outgoing';
       const type = item.kind === 'video' ? 'video' : 'voice';
       const state = item.state === 'missed' ? 'missed' : item.state === 'rejected' ? 'declined' : item.state === 'completed' ? formatCallDuration(item.duration || 0) : item.state;
-      return direction + ' ' + type + ' call with @' + item.peer + ' · ' + state + ' · ' + new Date(item.at).toLocaleString();
+      return direction + ' ' + type + ' call with @' + item.peer + ' Â· ' + state + ' Â· ' + new Date(item.at).toLocaleString();
     }).join('\n');
     infoModal('Recent calls', summary, [
       { label: 'Clear history on this device', className: 'danger-action', action: () => { localStorage.removeItem('fbchat-call-history'); $('#genericModal').hidden = true; toast('Call history cleared on this device.'); } },
@@ -1698,8 +1705,8 @@
         }
         void handleCallSignal(data);
       });
-      socket.on('call:accepted', () => { stopCallTone(); callStatus('Connecting…'); });
-      socket.on('call:ringing', () => callStatus('Ringing…'));
+      socket.on('call:accepted', () => { stopCallTone(); callStatus('Connectingâ€¦'); });
+      socket.on('call:ringing', () => callStatus('Ringingâ€¦'));
       socket.on('call:ended', data => {
         if (data.from === currentCallPeer || data.from === incomingCall?.from) {
           endCall(false, callConnectedAt ? 'completed' : (callDirection === 'incoming' ? 'missed' : 'cancelled'));
@@ -1826,9 +1833,9 @@
     const username = norm($('#profileUsernameInput').value);
     const displayName = $('#profileNameInput').value.trim();
     const bio = $('#profileBioInput').value.trim();
-    if (!USER_RE.test(username)) { $('#profileSaveError').textContent = 'Username must be 3–24 letters, numbers, dots or underscores.'; return; }
-    if (displayName.length < 2 || displayName.length > 40 || /[<>]/.test(displayName)) { $('#profileSaveError').textContent = 'Display name must be 2–40 characters.'; return; }
-    $('#profileSaveButton').disabled = true; $('#profileSaveButton').textContent = 'Saving…'; $('#profileSaveError').textContent = '';
+    if (!USER_RE.test(username)) { $('#profileSaveError').textContent = 'Username must be 3â€“24 letters, numbers, dots or underscores.'; return; }
+    if (displayName.length < 2 || displayName.length > 40 || /[<>]/.test(displayName)) { $('#profileSaveError').textContent = 'Display name must be 2â€“40 characters.'; return; }
+    $('#profileSaveButton').disabled = true; $('#profileSaveButton').textContent = 'Savingâ€¦'; $('#profileSaveError').textContent = '';
     try {
       const avatar = profileAvatarDirty ? draftAvatarUrl : (profile.avatar_url || null);
       const data = await api('/api/profile', {
@@ -1837,7 +1844,7 @@
       });
       profile = Object.assign({}, profile, data.profile);
       updateProfileSummary();
-      $('#profileButton').title = nameOf(profile) + ' · profile';
+      $('#profileButton').title = nameOf(profile) + ' Â· profile';
       setAvatar($('#profileButton'), profile);
       $('#profileButton').setAttribute('aria-label', nameOf(profile) + ' profile');
       if (socket?.connected) socket.emit('profile:refresh');
@@ -2114,7 +2121,7 @@
         'Open device settings to manage FB Chat permissions.',
         profileSettingButton('Open', () => {
           try { window.FBChatNative.openAppSettings(); }
-          catch { toast('Open Android Settings → Apps → FB Chat → Permissions.', 5000); }
+          catch { toast('Open Android Settings â†’ Apps â†’ FB Chat â†’ Permissions.', 5000); }
         }));
     }
   }
@@ -2130,7 +2137,7 @@
     }
     const fp = await fingerprint(activePeer.public_key), changed = $('#chatDetails').dataset.keyChanged === 'true';
     const description = nameOf(activePeer) + ' (@' + activePeer.username + ')\n\nPublic key fingerprint:\n' +
-      prettyFingerprint(fp) + '\n\nCompare this fingerprint with the other person via another trusted channel. First-contact pinning alone does not prove the contact’s identity.';
+      prettyFingerprint(fp) + '\n\nCompare this fingerprint with the other person via another trusted channel. First-contact pinning alone does not prove the contactâ€™s identity.';
     const actions = [];
     if (changed) actions.push({
       label: 'I verified this new fingerprint',
@@ -2225,7 +2232,7 @@
     $('#profileAvatarFile').addEventListener('change', async () => {
       const file = $('#profileAvatarFile').files?.[0];
       if (!file) return;
-      const button = $('#chooseAvatarButton'); button.disabled = true; button.textContent = 'Preparing…';
+      const button = $('#chooseAvatarButton'); button.disabled = true; button.textContent = 'Preparingâ€¦';
       try {
         draftAvatarUrl = await resizeProfilePhoto(file); profileAvatarDirty = true; updateProfileAvatarPreview();
         $('#profileSaveError').textContent = '';
@@ -2316,7 +2323,7 @@
       return;
     }
     if (!nativeUpdateCheckManual && $('#genericModal') && !$('#genericModal').hidden) {
-      toast('FB Chat v' + result.latestVersion + ' is available. Open Settings → Check for app updates.', 5500);
+      toast('FB Chat v' + result.latestVersion + ' is available. Open Settings â†’ Check for app updates.', 5500);
       return;
     }
     nativeUpdateCheckManual = false;

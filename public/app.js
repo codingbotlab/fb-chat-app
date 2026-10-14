@@ -791,6 +791,7 @@
   }
 
   let peerConnection = null, localStream = null, currentCallPeer = null, currentCallKind = 'audio', incomingCall = null;
+  const pendingCallSignals = new Map();
   const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
   function callStatus(text) { const el = $('#callStatus'); if (el) el.textContent = text; }
   function showCallUi(show) { $('#callOverlay').hidden = !show; }
@@ -875,6 +876,12 @@
   }
   function incomingCallDialog(data) {
     incomingCall = data;
+    const queued = pendingCallSignals.get(data.from) || [];
+    pendingCallSignals.delete(data.from);
+    for (const signal of queued) {
+      if (signal.description) incomingCall.description = signal.description;
+      if (signal.candidate) (incomingCall.candidates ||= []).push(signal.candidate);
+    }
     infoModal('Incoming ' + (data.kind === 'video' ? 'video' : 'voice') + ' call',
       (data.displayName || data.from) + ' (@' + data.from + ') is calling you.',
       [
@@ -898,9 +905,15 @@
       socket.__fbCallHandlers = true;
       socket.on('call:incoming', incomingCallDialog);
       socket.on('call:signal', data => {
-        if (!peerConnection && incomingCall && data.from === incomingCall.from) {
-          if (data.signal?.description) incomingCall.description = data.signal.description;
-          if (data.signal?.candidate) (incomingCall.candidates ||= []).push(data.signal.candidate);
+        if (!peerConnection) {
+          if (incomingCall && data.from === incomingCall.from) {
+            if (data.signal?.description) incomingCall.description = data.signal.description;
+            if (data.signal?.candidate) (incomingCall.candidates ||= []).push(data.signal.candidate);
+          } else if (data.from && data.signal) {
+            const queued = pendingCallSignals.get(data.from) || [];
+            queued.push(data.signal);
+            pendingCallSignals.set(data.from, queued.slice(-64));
+          }
           return;
         }
         void handleCallSignal(data);

@@ -45,6 +45,7 @@ const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || '')
 const ADMIN_SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || SUPABASE_SERVICE_ROLE_KEY || '');
 const ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const adminLoginAttempts = new Map();
+const userLoginAttempts = new Map();
 let fcmMessaging = null;
 if (FCM_SERVICE_ACCOUNT_JSON) {
   try {
@@ -236,8 +237,8 @@ async function storeProfileAvatar(userId, dataUrl) {
   }
   return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.' + extension;
 }
-async function updateAuthUserMetadata(user, metadata) {
-  const nextMetadata = Object.assign({}, user?.user_metadata || {}, metadata);
+async function updateAuthUserMetadata(user, metadata, replace = false) {
+  const nextMetadata = replace ? metadata : Object.assign({}, user?.user_metadata || {}, metadata);
   const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(user.id), {
     method: 'PUT',
     headers: {
@@ -253,6 +254,34 @@ async function updateAuthUserMetadata(user, metadata) {
   if (!response.ok) throw appError(503, 'PROFILE_METADATA_SAVE_FAILED',
     'The profile name was saved, but its photo/about details could not be saved. Please retry.');
   return result;
+}
+function compactUserMetadata(metadata = {}) {
+  // User metadata is embedded in Supabase access-token claims. Keep only bounded
+  // fields used by FB Chat, never Base64 photos or large provider metadata.
+  const compact = {};
+  const username = typeof metadata.username === 'string' ? normalize(metadata.username) : '';
+  if (validUsername(username)) compact.username = username;
+  const displayName = typeof metadata.display_name === 'string' ? metadata.display_name.trim() : '';
+  if (validDisplayName(displayName)) compact.display_name = displayName;
+  const fullName = typeof metadata.full_name === 'string' ? metadata.full_name.trim() : '';
+  if (validDisplayName(fullName)) compact.full_name = fullName;
+  const name = typeof metadata.name === 'string' ? metadata.name.trim() : '';
+  if (validDisplayName(name)) compact.name = name;
+  if (validBio(metadata.bio)) compact.bio = metadata.bio.trim();
+  if (validStoredAvatarUrl(metadata.avatar_url)) compact.avatar_url = metadata.avatar_url;
+  return compact;
+}
+function isRateLimitedUserLogin(req) {
+  const key = String(req.ip || req.socket?.remoteAddress || 'unknown');
+  const now = Date.now();
+  let attempt = userLoginAttempts.get(key);
+  if (!attempt || attempt.resetAt <= now) attempt = { count: 0, resetAt: now + 15 * 60 * 1000 };
+  attempt.count += 1;
+  userLoginAttempts.set(key, attempt);
+  if (userLoginAttempts.size > 5000) {
+    for (const [entry, value] of userLoginAttempts) if (value.resetAt <= now) userLoginAttempts.delete(entry);
+  }
+  return attempt.count > 10;
 }
 async function exactCount(table) {
   requireConfigured();
@@ -511,6 +540,69 @@ app.get('/api/config', (_req, res) => res.json({
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
+app.post('/api/auth/login', async (req, res) => {
+  if (!configured) {
+    return res.status(503).json({ error: 'SERVER_NOT_CONFIGURED', message: 'Sign-in service is not configured. Please try again later.' });
+  }
+  if (isRateLimitedUserLogin(req)) {
+    return res.status(429).json({ error: 'LOGIN_RATE_LIMITED', message: 'Too many sign-in attempts. Wait 15 minutes and retry.' });
+  }
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!email || !password || password.length > 1024) {
+    return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Enter your email and password.' });
+  }
+  try {
+    const response = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(12_000)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.access_token || !result.refresh_token || !result.user?.id) {
+      return res.status(401).json({ error: 'SIGN_IN_FAILED', message: 'Email or password is incorrect.' });
+    }
+
+    let sessionResult = result;
+    const metadata = result.user.user_metadata || {};
+    const metadataBytes = Buffer.byteLength(JSON.stringify(metadata), 'utf8');
+    const avatar = metadata.avatar_url;
+    const unsafeAvatar = avatar != null && avatar !== '' && !validStoredAvatarUrl(avatar);
+    if (metadataBytes > 3000 || unsafeAvatar) {
+      const compactMetadata = compactUserMetadata(metadata);
+      await updateAuthUserMetadata(result.user, compactMetadata, true);
+
+      // Supabase JWTs retain the old metadata until a token refresh. Refresh only
+      // after the oversized fields have been removed, so the browser never sends
+      // a giant Authorization header to the chat API.
+      const refreshResponse = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ refresh_token: result.refresh_token }),
+        signal: AbortSignal.timeout(12_000)
+      });
+      const refreshed = await refreshResponse.json().catch(() => ({}));
+      if (!refreshResponse.ok || !refreshed.access_token || !refreshed.refresh_token) {
+        throw appError(503, 'SESSION_REFRESH_FAILED', 'Your profile data was cleaned. Please sign in once more.');
+      }
+      sessionResult = refreshed;
+    }
+
+    // Guard against another oversized custom metadata field reintroducing 431s.
+    if (String(sessionResult.access_token).length > 12_000) {
+      throw appError(503, 'SESSION_TOKEN_TOO_LARGE', 'Your saved account details are too large for sign-in. Please contact app support.');
+    }
+    userLoginAttempts.delete(String(req.ip || req.socket?.remoteAddress || 'unknown'));
+    res.json(sessionResult);
+  } catch (error) {
+    const status = Number.isInteger(error?.status) ? error.status : 503;
+    res.status(status).json({
+      error: error?.code || 'AUTH_LOGIN_FAILED',
+      message: status === 503 ? (error?.message || 'Sign-in service is temporarily unavailable. Please retry.') : 'Sign-in failed.'
+    });
+  }
+});
 app.get('/api/admin/config', (_req, res) => res.json({
   configured,
   adminConfigured: ADMIN_EMAILS.size > 0,

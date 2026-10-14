@@ -521,3 +521,118 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 }
 
 @media(max-width:720px){.app.chat-open{padding-bottom:0}}
+
+
+/* Full-screen WhatsApp-style Profile & Settings page. */
+.profile-modal{
+  z-index:70;position:fixed;inset:0;display:flex;align-items:stretch;justify-content:stretch;
+  overflow:hidden;padding:0;background:#0b141a;
+}
+.profile-page{
+  position:relative;width:100%;max-width:none;height:100dvh;max-height:none;min-height:0;
+  overflow-x:hidden;overflow-y:auto;padding:0;border:0;border-radius:0;background:#0b141a;
+  box-shadow:none;display:flex;flex-direction:column;overscroll-behavior:contain;
+}
+.profile-page-header{
+  position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:20px;
+  min-height:78px;padding:14px max(18px,calc((100vw - 900px)/2));
+  border-bottom:1px solid #23373e;background:rgba(17,27,33,.97);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+}
+.profile-back-button{
+  display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:42px;padding:7px 10px;
+  border:1px solid #30444b;border-radius:12px;background:#17262d;color:#d8e4e7;
+  font-size:12px;font-weight:650;
+}
+.profile-back-button svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.profile-page-heading h2{margin:0!important;color:#e9edef;font-size:20px!important;font-weight:750}
+.profile-page-heading .profile-intro{margin:3px 0 0!important;color:#8ea5ad;font-size:11px!important;line-height:1.4!important}
+.profile-page-body{width:100%;max-width:900px;margin:0 auto;padding:24px 20px calc(28px + env(safe-area-inset-bottom))}
+.profile-identity-card{
+  display:grid;grid-template-columns:92px minmax(0,1fr);align-items:center;column-gap:18px;row-gap:10px;
+  padding:22px;margin-bottom:18px;border:1px solid #283f47;border-radius:18px;
+  background:linear-gradient(120deg,#13272d,#111b21 72%);
+}
+.profile-avatar-large{width:88px;height:88px;flex:0 0 88px;border:2px solid #2f544b;box-shadow:0 0 0 5px #00a88412;font-size:34px}
+.profile-identity-copy{min-width:0;display:flex;flex-direction:column;gap:5px}
+.profile-identity-copy strong{font-size:22px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}
+.profile-identity-copy>span{color:#36cda2;font-size:13px}
+.profile-identity-copy p{margin:0!important;color:#a0b4bb;font-size:12px!important;line-height:1.5!important;overflow-wrap:anywhere}
+.profile-identity-card .profile-photo-actions{grid-column:1/-1;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.profile-identity-card .profile-photo-actions small{color:#7f989f;font-size:10px}
+.profile-photo-buttons{display:flex;gap:9px;flex-wrap:wrap}
+.profile-photo-buttons .text-action{min-height:34px;padding:7px 12px;border:1px solid #2d4b50;border-radius:10px;background:#142b2d;color:#62dfb8;font-size:11px;font-weight:650}
+.profile-photo-buttons .muted-action{background:#142129;color:#a7bac0}
+.profile-form{margin:0}
+.profile-section,.profile-settings-section{
+  margin:0 0 18px;padding:22px;border:1px solid #263b42;border-radius:18px;background:#111b21;
+}
+.profile-section-heading{margin:0 0 14px}
+.profile-section-heading h3{margin:0 0 5px;color:#e9edef;font-size:16px;font-weight:750}
+.profile-section-heading p{margin:0!important;color:#8da4ac;font-size:11px!important;line-height:1.55!important}
+.profile-form .profile-section label{display:block;margin:13px 0 6px;color:#c5d3d7;font-size:11px;font-weight:650}
+.profile-form .profile-section input:not([type=file]),.profile-form .profile-section textarea{
+  display:block;width:100%;border:1px solid #30464d;border-radius:10px;background:#09161c;
+  color:#e9edef;padding:11px 12px;font-size:13px;outline:none;box-shadow:none;
+}
+.profile-form .profile-section input:not([type=file]){height:43px}
+.profile-form .profile-section textarea{min-height:84px;max-height:180px;resize:vertical;line-height:1.5}
+.profile-form .profile-section input:focus,.profile-form .profile-section textarea:focus{border-color:#00a884;box-shadow:0 0 0 3px #00a8841c}
+.profile-field-hint{font-size:10px;line-height:1.5}
+.profile-char-count{font-size:10px;margin-top:8px}
+.profile-save-error{font-size:11px;margin:9px 0;min-height:16px}
+.profile-form #profileSaveButton{width:auto;min-width:180px;min-height:42px;margin-top:5px;padding:10px 20px;border-radius:11px;font-size:12px;font-weight:750}
+.profile-settings-section{scroll-margin-top:92px}
+.profile-settings-content{display:flex;flex-direction:column;gap:14px}
+.profile-settings-group{overflow:hidden;border:1px solid #273d44;border-radius:15px;background:#0d191f}
+.profile-settings-group h4{margin:0;padding:12px 15px;border-bottom:1px solid #23373e;color:#36cda2;font-size:11px;font-weight:750;letter-spacing:.2px}
+.profile-setting-row{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:78px;padding:12px 15px;border-bottom:1px solid #1e3037}
+.profile-setting-row:last-child{border-bottom:0}
+.profile-setting-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#18302f;color:#50d9b1;font-size:16px}
+.profile-setting-copy{min-width:0;display:flex;flex-direction:column;gap:4px}
+.profile-setting-copy strong{color:#e1e9eb;font-size:12px;font-weight:700}
+.profile-setting-copy small{color:#8da4ac;font-size:10px;line-height:1.5}
+.profile-switch-wrap{min-width:126px;max-width:180px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.profile-switch{appearance:none;-webkit-appearance:none;position:relative;width:43px;height:25px;flex:0 0 25px;border:1px solid #496069;border-radius:20px;background:#263a42;cursor:pointer;transition:background .15s,border-color .15s}
+.profile-switch::after{content:"";position:absolute;left:3px;top:3px;width:17px;height:17px;border-radius:50%;background:#c2cdd1;transition:transform .15s,background .15s}
+.profile-switch:checked{background:#087e69;border-color:#14b892}
+.profile-switch:checked::after{transform:translateX(18px);background:#fff}
+.profile-switch:disabled{opacity:.6;cursor:wait}
+.profile-setting-status{max-width:180px;color:#789199;font-size:9px;line-height:1.35;text-align:right}
+.profile-setting-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-width:82px;min-height:35px;padding:8px 10px;border:1px solid #33544f;border-radius:10px;background:#172b2b;color:#62dfb8;font-size:10px;font-weight:700;white-space:nowrap}
+.profile-setting-button:disabled{opacity:.6;cursor:wait}
+.profile-settings-loading{padding:15px;color:#8da4ac;font-size:12px}
+.profile-footer-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:14px 4px 6px;border-top:1px solid #283d44}
+.profile-account-email{min-width:0;color:#718b93;font-size:10px;overflow-wrap:anywhere}
+.profile-footer-actions .danger-text{color:#ffaaa3;border:1px solid #553438;border-radius:10px;padding:8px 12px;font-size:11px;font-weight:650}
+@media(max-width:720px){
+  .profile-modal{align-items:stretch;padding:0}
+  .profile-page{height:100dvh;width:100%;border-radius:0;padding-bottom:env(safe-area-inset-bottom)}
+  .profile-page-header{min-height:68px;gap:12px;padding:10px 14px}
+  .profile-back-button{min-width:42px;min-height:42px;justify-content:center;padding:8px}
+  .profile-back-button span{display:none}
+  .profile-page-heading h2{font-size:18px!important}
+  .profile-page-body{padding:14px 12px calc(22px + env(safe-area-inset-bottom))}
+  .profile-identity-card{grid-template-columns:76px minmax(0,1fr);gap:12px;padding:15px;border-radius:15px}
+  .profile-avatar-large{width:72px;height:72px;flex-basis:72px;font-size:28px}
+  .profile-identity-copy strong{font-size:18px}
+  .profile-identity-copy>span{font-size:12px}
+  .profile-identity-card .profile-photo-actions{align-items:flex-start;flex-direction:column;gap:8px}
+  .profile-section,.profile-settings-section{padding:15px;margin-bottom:13px;border-radius:15px}
+  .profile-section-heading h3{font-size:15px}
+  .profile-setting-row{grid-template-columns:37px minmax(0,1fr) auto;gap:9px;padding:11px 10px;min-height:72px}
+  .profile-setting-icon{width:34px;height:34px;border-radius:10px;font-size:14px}
+  .profile-setting-copy strong{font-size:11px}
+  .profile-setting-copy small{font-size:9px}
+  .profile-switch-wrap{min-width:44px;max-width:110px}
+  .profile-setting-status{max-width:110px;font-size:8px}
+  .profile-setting-button{min-width:68px;padding:7px 8px;font-size:9px}
+  .profile-form #profileSaveButton{width:100%}
+  .profile-footer-actions .danger-text{font-size:10px}
+}
+@media(max-width:380px){
+  .profile-setting-row{grid-template-columns:32px minmax(0,1fr) auto;gap:7px;padding:10px 8px}
+  .profile-setting-icon{width:30px;height:30px}
+  .profile-setting-button{min-width:58px;padding:6px}
+  .profile-setting-status{max-width:86px}
+}

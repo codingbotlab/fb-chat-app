@@ -945,7 +945,7 @@
         if (active) item.setAttribute('aria-current', 'page');
         else item.removeAttribute('aria-current');
       });
-      $('[data-rail]').forEach((item) => item.classList.toggle('active', item.dataset.rail === section));
+      $$('[data-rail]').forEach((item) => item.classList.toggle('active', item.dataset.rail === section));
       if (section === 'chats') {
         $('#app').classList.remove('chat-open');
         return;
@@ -960,7 +960,7 @@
       if (screen) infoModal(screen[0], screen[1], [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
     };
     bottomNavItems.forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.bottomNav)));
-    $('[data-rail]').forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.rail)));
+    $$('[data-rail]').forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.rail)));
   }
   async function initialize() {
     bindUi(); $('#authOverlay').classList.add('show'); setAuthMode('login');

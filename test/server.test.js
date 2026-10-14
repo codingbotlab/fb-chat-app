@@ -268,8 +268,8 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
   assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
-  assert.match(gradle, /versionCode 5/);
-  assert.match(gradle, /versionName '1\.2\.2'/);
+  assert.match(gradle, /versionCode 6/);
+  assert.match(gradle, /versionName '1\.2\.3'/);
   const java = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'android-apk.yml'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
@@ -306,4 +306,22 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
   assert.match(sw, /fb-chat-shell-v10/);
+});
+
+
+test('Android call tones, separate call notification channel and queued WebRTC events are wired', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const java = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
+  const service = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'FBChatMessagingService.java'), 'utf8');
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  assert.match(java, /void startCallTone\(String kind\)/);
+  assert.match(java, /void setCallAudioRoute\(boolean speaker\)/);
+  assert.match(java, /CALLS_CHANNEL_ID, "Incoming calls"/);
+  assert.match(service, /incoming_call/);
+  assert.match(service, /Notification\.CATEGORY_CALL/);
+  assert.match(server, /queueCallEvent\(peer\.id, 'call:signal'/);
+  assert.match(server, /type: payload\.type === 'incoming_call'/);
+  assert.match(server, /call_kind: payload\.call_kind/);
 });

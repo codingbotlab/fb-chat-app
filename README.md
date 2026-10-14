@@ -31,6 +31,7 @@ Never put the service-role key in frontend code, Git, or public issues. \`GET /a
 
 - The site can be installed on Android as a standalone Progressive Web App (PWA): open `https://chat.fashionbazz.in` in Chrome and choose **Install app** (or Chrome menu → **Add to Home screen**).
 - `public/sw.js` uses network-first requests for the app shell, so new website assets are fetched when online. The worker checks for updates when the app opens or becomes visible and activates new versions automatically.
+- The native Android app checks GitHub Releases when its app page finishes loading and when the user returns to the foreground, with automatic checks limited to one every six hours. When a newer signed APK is available, the app shows an in-app update prompt even before sign-in; users can also check manually in **Settings & permissions → Check for app updates**. Android still asks the user to confirm installing the APK.
 - Auth/API responses and Socket.IO paths are not stored in Cache Storage. Offline mode is limited to the cached app shell; messaging itself needs connectivity.
 - This is an installable web app, not a self-updating native APK. Android does not silently replace a sideloaded APK; native package updates normally go through Google Play or a user-confirmed updater. The installed PWA's web content updates from the live site without reinstalling an APK.
 

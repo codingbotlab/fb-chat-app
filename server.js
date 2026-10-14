@@ -786,7 +786,8 @@ app.post('/api/qr/approve', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ ok: true });
 });
-\napp.post('/api/auth/login', async (req, res) => {
+
+app.post('/api/auth/login', async (req, res) => {
   if (!configured) {
     return res.status(503).json({ error: 'SERVER_NOT_CONFIGURED', message: 'Sign-in service is not configured. Please try again later.' });
   }

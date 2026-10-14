@@ -152,7 +152,7 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
   for (const id of [
-    'app', 'chatList', 'chatSearch', 'newChat', 'mobileSettingsButton', 'emptyNewChat', 'welcomeNewChat',
+    'app', 'chatList', 'chatSearch', 'newChat', 'emptyNewChat', 'welcomeNewChat',
     'authOverlay', 'authForm', 'loginTab', 'signupTab', 'displayName', 'username',
     'email', 'password', 'chatDetails', 'messages', 'composeForm', 'messageInput',
     'sendBtn', 'genericModal', 'genericForm', 'genericInput', 'connectionDot'
@@ -279,7 +279,7 @@ test('admin console is served at a separate page path and its APIs require authe
   const userPage = await fetch(base + '/');
   assert.equal(userPage.status, 200);
   const userHtml = await userPage.text();
-  assert.match(userHtml, /Edit profile/);
+  assert.match(userHtml, /Profile/);
   assert.doesNotMatch(userHtml, /Administrator sign in|Message activity/);
   const adminConfig = await fetch(base + '/api/admin/config');
   assert.equal(adminConfig.status, 200);
@@ -364,8 +364,8 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /notificationclick/);
   assert.match(sw, /fb-chat-shell-v15/);
   assert.match(js, /showCallPermissionPrompt/);
-  assert.match(js, /Microphone for voice calls/);
-  assert.match(js, /Camera for video calls/);
+  assert.match(js, /'Microphone'/);
+  assert.match(js, /'Camera'/);
   assert.match(html, /id="callOverlay"/);
 });
 

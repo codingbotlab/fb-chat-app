@@ -823,81 +823,233 @@
     infoModal('Message options', 'Actions apply to this message. Starred and hidden-message settings are saved only on this device.', actions);
   }
 
-  let peerConnection = null, localStream = null, currentCallPeer = null, currentCallKind = 'audio', incomingCall = null;
+  let peerConnection = null, localStream = null, remoteMediaStream = null;
+  let currentCallPeer = null, currentCallKind = 'audio', incomingCall = null;
+  let pendingRemoteIceCandidates = [], callStartedAt = 0, callConnectedAt = 0;
+  let callClockTimer = null, toneTimer = null, toneContext = null, toneNodes = [];
+  let isMuted = false, isCameraDisabled = false, isSpeakerEnabled = true, isFrontCamera = true;
+  let callDirection = 'outgoing';
   const pendingCallSignals = new Map();
-  const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+  const rtcConfig = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ],
+    bundlePolicy: 'max-bundle'
+  };
   function callStatus(text) { const el = $('#callStatus'); if (el) el.textContent = text; }
-  function showCallUi(show) { $('#callOverlay').hidden = !show; }
-  function withMediaStage(error, stage) {
-    const wrapped = new Error(error?.message || (stage === 'camera' ? 'Camera could not start.' : 'Microphone could not start.'));
-    wrapped.name = error?.name || 'Error';
-    wrapped.mediaStage = stage;
-    return wrapped;
+  function showCallUi(show) {
+    $('#callOverlay').hidden = !show;
+    if ($('#callFloatingButton')) $('#callFloatingButton').hidden = !peerConnection || show;
+  }
+  function startCallTone(kind) {
+    stopCallTone();
+    try {
+      if (window.FBChatNative && typeof window.FBChatNative.startCallTone === 'function') {
+        window.FBChatNative.startCallTone(kind || 'ringback');
+        return;
+      }
+    } catch {}
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      toneContext = new AudioContextClass();
+      const playBurst = () => {
+        if (!toneContext || toneContext.state === 'closed') return;
+        const now = toneContext.currentTime, oscillator = toneContext.createOscillator(), gain = toneContext.createGain();
+        oscillator.type = 'sine'; oscillator.frequency.value = kind === 'incoming' ? 440 : 425;
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.12, now + 0.04);
+        gain.gain.setValueAtTime(0.12, now + 0.45);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.52);
+        oscillator.connect(gain); gain.connect(toneContext.destination);
+        oscillator.start(now); oscillator.stop(now + 0.55); toneNodes.push(oscillator);
+        oscillator.addEventListener('ended', () => {
+          toneNodes = toneNodes.filter(node => node !== oscillator);
+          try { oscillator.disconnect(); gain.disconnect(); } catch {}
+        }, { once: true });
+      };
+      playBurst(); toneTimer = setInterval(playBurst, kind === 'incoming' ? 1050 : 2100);
+      toneContext.resume().catch(() => {});
+    } catch {}
+  }
+  function stopCallTone() {
+    clearInterval(toneTimer); toneTimer = null;
+    toneNodes.forEach(node => { try { node.stop(); } catch {} }); toneNodes = [];
+    if (toneContext) { const old = toneContext; toneContext = null; old.close().catch(() => {}); }
+    try { if (window.FBChatNative && typeof window.FBChatNative.stopCallTone === 'function') window.FBChatNative.stopCallTone(); } catch {}
+  }
+  function setCallAudioRoute(speaker) {
+    isSpeakerEnabled = Boolean(speaker);
+    const button = $('#speakerCallButton');
+    if (button) {
+      button.classList.toggle('control-active', isSpeakerEnabled);
+      button.setAttribute('aria-pressed', String(isSpeakerEnabled));
+      const label = button.querySelector('span:last-child');
+      if (label) label.textContent = isSpeakerEnabled ? 'Speaker' : 'Earpiece';
+    }
+    try {
+      if (window.FBChatNative && typeof window.FBChatNative.setCallAudioRoute === 'function') {
+        window.FBChatNative.setCallAudioRoute(isSpeakerEnabled);
+      } else {
+        const audio = $('#remoteCallAudio');
+        if (audio && 'setSinkId' in audio) audio.setSinkId('default').catch(() => {});
+      }
+    } catch {}
+  }
+  function playRemoteMedia(element) {
+    if (!element) return;
+    const result = element.play();
+    if (result && typeof result.catch === 'function') result.catch(error => {
+      console.warn('[FBChatCall] media playback was blocked:', error?.name || error?.message || error);
+    });
+  }
+  function attachRemoteTrack(event) {
+    if (!event?.track) return;
+    if (!remoteMediaStream) remoteMediaStream = new MediaStream();
+    // Aggregate both audio and video even on WebView versions that omit event.streams.
+    for (const stream of (event.streams || [])) {
+      for (const track of stream.getTracks()) {
+        if (!remoteMediaStream.getTracks().some(item => item.id === track.id)) remoteMediaStream.addTrack(track);
+      }
+    }
+    if (!remoteMediaStream.getTracks().some(item => item.id === event.track.id)) remoteMediaStream.addTrack(event.track);
+    if (event.track.kind === 'video') {
+      const video = $('#remoteCallVideo'), placeholder = $('#remoteCallPlaceholder');
+      video.srcObject = remoteMediaStream; video.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+      event.track.onunmute = () => { video.hidden = false; if (placeholder) placeholder.hidden = true; playRemoteMedia(video); };
+      event.track.onmute = () => {
+        if (placeholder && !isCameraDisabled) {
+          placeholder.textContent = 'The other camera is paused';
+          placeholder.hidden = false;
+        }
+      };
+      playRemoteMedia(video);
+      callStatus('Receiving video…');
+    } else if (event.track.kind === 'audio') {
+      const audio = $('#remoteCallAudio');
+      audio.srcObject = remoteMediaStream; audio.muted = false; audio.volume = 1;
+      playRemoteMedia(audio);
+    }
+  }
+  async function setRemoteDescriptionAndFlush(description) {
+    await peerConnection.setRemoteDescription(description);
+    const queued = pendingRemoteIceCandidates.splice(0);
+    for (const candidate of queued) {
+      try { await peerConnection.addIceCandidate(candidate); }
+      catch (error) { console.warn('[FBChatCall] queued ICE candidate:', error?.message || error); }
+    }
+  }
+  function setCallControlState() {
+    const micButton = $('#muteCallButton');
+    if (micButton) {
+      const label = micButton.querySelector('span:last-child');
+      if (label) label.textContent = isMuted ? 'Unmute' : 'Mute';
+      micButton.classList.toggle('control-active', isMuted);
+      micButton.setAttribute('aria-pressed', String(isMuted));
+    }
+    const cameraButton = $('#cameraCallButton');
+    if (cameraButton) {
+      const label = cameraButton.querySelector('span:last-child');
+      if (label) label.textContent = isCameraDisabled ? 'Camera on' : 'Camera off';
+      cameraButton.classList.toggle('control-active', isCameraDisabled);
+      cameraButton.setAttribute('aria-pressed', String(isCameraDisabled));
+      cameraButton.disabled = currentCallKind !== 'video';
+    }
+    if ($('#flipCameraButton')) $('#flipCameraButton').disabled = currentCallKind !== 'video';
   }
   async function acquireCallMedia(kind) {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('Camera/microphone access is unavailable here. Update FB Chat or open the HTTPS site in Chrome.');
-    }
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera/microphone access is unavailable. Update the app or open the HTTPS site in Chrome.');
     let stream;
-    const audioConstraints = {
-      echoCancellation: { ideal: true },
-      noiseSuppression: { ideal: true },
-      autoGainControl: { ideal: true }
-    };
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false
+      });
     } catch (firstError) {
       const retryable = ['NotFoundError', 'NotReadableError', 'OverconstrainedError', 'AbortError'].includes(firstError?.name)
         || /audio source not found|requested device not found/i.test(String(firstError?.message || ''));
       if (!retryable) throw withMediaStage(firstError, 'microphone');
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      try {
-        // Some Android WebView audio drivers reject enhanced constraints; retry with the default mic.
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      } catch (retryError) {
-        throw withMediaStage(retryError, 'microphone');
-      }
+      await new Promise(resolve => setTimeout(resolve, 250));
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false }); }
+      catch (retryError) { throw withMediaStage(retryError, 'microphone'); }
     }
     if (kind !== 'video') return stream;
     try {
-      // Request the camera separately so Android WebView can authorize each source independently.
       const cameraStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'user' }, width: { ideal: 640 }, height: { ideal: 480 } }
+        audio: false, video: { facingMode: { ideal: 'user' }, width: { ideal: 640 }, height: { ideal: 480 } }
       });
-      const tracks = cameraStream.getVideoTracks();
-      if (!tracks.length) throw new Error('No camera track was returned by Android.');
-      tracks.forEach((track) => stream.addTrack(track));
-      cameraStream.getAudioTracks().forEach((track) => track.stop());
+      const videoTrack = cameraStream.getVideoTracks()[0];
+      if (!videoTrack) throw new Error('No camera track was returned by Android.');
+      stream.addTrack(videoTrack); isFrontCamera = true;
+      cameraStream.getAudioTracks().forEach(track => track.stop());
       return stream;
     } catch (error) {
-      stream.getTracks().forEach((track) => track.stop());
+      stream.getTracks().forEach(track => track.stop());
       throw withMediaStage(error, 'camera');
     }
   }
+  function withMediaStage(error, stage) {
+    const wrapped = new Error(error?.message || (stage === 'camera' ? 'Camera could not start.' : 'Microphone could not start.'));
+    wrapped.name = error?.name || 'Error'; wrapped.mediaStage = stage;
+    return wrapped;
+  }
   function callMediaErrorMessage(error) {
-    const detail = String(error?.message || '').toLowerCase();
-    const stage = error?.mediaStage || 'microphone';
-    if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
-      return stage === 'camera'
-        ? 'Camera access was denied. Allow Camera for FB Chat in Android Settings > Apps > FB Chat > Permissions.'
-        : 'Microphone access was denied. Allow Microphone for FB Chat in Android Settings > Apps > FB Chat > Permissions.';
-    }
-    if (stage === 'camera' && (error?.name === 'NotFoundError' || /camera.*not found|no camera/i.test(detail))) {
-      return 'Android cannot find a camera source. Check the tablet camera and allow Camera in FB Chat permissions.';
-    }
-    if (error?.name === 'NotFoundError' || /audio source not found|requested device not found|no audio device/i.test(detail)) {
-      return 'Android is not exposing a microphone source to FB Chat. Check Settings > Apps > FB Chat > Permissions > Microphone, turn off any system-wide microphone privacy switch, and close other apps using the mic.';
-    }
-    if (error?.name === 'NotReadableError' || error?.name === 'AbortError') {
-      return stage === 'camera'
-        ? 'The camera is detected but cannot start. Close Camera or other video-call apps, then try again.'
-        : 'The microphone is detected but cannot start. Close Recorder, Camera or other call apps, check the tablet microphone privacy switch, then try again.';
-    }
-    if (error?.name === 'OverconstrainedError') {
-      return 'The tablet rejected the media settings. Disconnect external audio devices and retry with the tablet built-in microphone/camera.';
-    }
-    return error?.message || 'Could not access the camera or microphone. Check Android permissions and try again.';
+    const detail = String(error?.message || '').toLowerCase(), stage = error?.mediaStage || 'microphone';
+    if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError')
+      return stage === 'camera' ? 'Camera permission denied. Check Android Settings > Apps > FB Chat > Permissions.'
+        : 'Microphone permission denied. Check Android Settings > Apps > FB Chat > Permissions.';
+    if (error?.name === 'NotFoundError' || /audio source not found|requested device not found|no audio device/i.test(detail))
+      return stage === 'camera' ? 'Camera source not found. Check camera permissions and close other camera apps.'
+        : 'Microphone source not found. Check microphone permission and the system-wide microphone privacy switch.';
+    if (error?.name === 'NotReadableError' || error?.name === 'AbortError')
+      return stage === 'camera' ? 'Camera is busy. Close Camera or another video-call app and retry.'
+        : 'Microphone is busy. Close Recorder, Camera or other call apps and retry.';
+    return error?.message || 'Could not access camera or microphone. Check Android permissions and retry.';
+  }
+  function setupPeerConnection() {
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    remoteMediaStream = new MediaStream(); pendingRemoteIceCandidates = [];
+    peerConnection.ontrack = attachRemoteTrack;
+    peerConnection.onicecandidate = event => {
+      if (event.candidate && currentCallPeer && socket?.connected)
+        socket.emit('call:signal', { to: currentCallPeer, signal: { candidate: event.candidate.toJSON?.() || event.candidate } });
+    };
+    peerConnection.onconnectionstatechange = () => {
+      if (!peerConnection) return;
+      const state = peerConnection.connectionState;
+      if (state === 'connected') {
+        callConnectedAt = callConnectedAt || Date.now(); stopCallTone(); callStatus('Connected');
+        if ($('#callTimer')) $('#callTimer').hidden = false;
+      } else if (state === 'connecting') callStatus('Connecting…');
+      else if (state === 'disconnected') callStatus('Reconnecting…');
+      else if (state === 'failed') { callStatus('Connection failed'); toast('Network path failed. Some networks need a TURN relay for video calls.', 5000); }
+    };
+    peerConnection.oniceconnectionstatechange = () => {
+      if (peerConnection?.iceConnectionState === 'failed') callStatus('Network path failed');
+      else if (peerConnection?.iceConnectionState === 'disconnected') callStatus('Reconnecting…');
+    };
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  }
+  function formatCallDuration(ms) {
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    return String(Math.floor(sec / 60)).padStart(2,'0') + ':' + String(sec % 60).padStart(2,'0');
+  }
+  function readCallHistory() {
+    try {
+      const rows = JSON.parse(localStorage.getItem('fbchat-call-history') || '[]');
+      return Array.isArray(rows) ? rows.filter(item => item && typeof item.id === 'string').slice(0, 50) : [];
+    } catch { return []; }
+  }
+  function storeCallHistory(entry) {
+    try { const rows = readCallHistory(); rows.unshift(entry); localStorage.setItem('fbchat-call-history', JSON.stringify(rows.slice(0,50))); } catch {}
+  }
+  function startCallClock() {
+    clearInterval(callClockTimer);
+    const timer = $('#callTimer'); if (timer) timer.hidden = false;
+    callClockTimer = setInterval(() => {
+      if (timer) timer.textContent = formatCallDuration((callConnectedAt || callStartedAt) ? Date.now() - (callConnectedAt || callStartedAt) : 0);
+    }, 1000);
   }
   async function startCall(kind) {
     if (!activePeer || !socket?.connected) return toast('Open a chat and connect before calling.');
@@ -905,62 +1057,59 @@
     if (kind === 'video' && localStorage.getItem(callPermissionToggleKey('camera')) === 'off') return toast('Camera is disabled in Settings. Enable it before making a video call.', 4500);
     if (peerConnection) return toast('A call is already active.');
     currentCallPeer = activePeer.username; currentCallKind = kind === 'video' ? 'video' : 'audio';
+    callDirection = 'outgoing'; callStartedAt = Date.now(); callConnectedAt = 0;
+    isMuted = false; isCameraDisabled = false; isSpeakerEnabled = true; isFrontCamera = true;
+    $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + nameOf(activePeer);
+    $('#callAvatar').textContent = nameOf(activePeer).slice(0,1).toUpperCase();
+    $('#remotePlaceholderAvatar').textContent = nameOf(activePeer).slice(0,1).toUpperCase();
+    $('#callTimer').hidden = true; $('#remoteCallVideo').hidden = true;
+    $('#remoteCallPlaceholder').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').srcObject = null;
     try {
       localStream = await acquireCallMedia(currentCallKind);
-      $('#localCallVideo').srcObject = localStream;
-      $('#localCallVideo').hidden = currentCallKind !== 'video';
-      $('#remoteCallVideo').hidden = currentCallKind !== 'video';
-      $('#remoteCallAudio').hidden = true;
-      peerConnection = new RTCPeerConnection(rtcConfig);
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-      peerConnection.ontrack = event => {
-        const stream = event.streams[0];
-        if (currentCallKind === 'video') { $('#remoteCallVideo').srcObject = stream; $('#remoteCallVideo').hidden = false; }
-        else { $('#remoteCallAudio').srcObject = stream; $('#remoteCallAudio').play().catch(() => {}); }
-      };
-      peerConnection.onicecandidate = event => {
-        if (event.candidate && currentCallPeer) socket.emit('call:signal', { to: currentCallPeer, signal: { candidate: event.candidate } });
-      };
-      peerConnection.onconnectionstatechange = () => {
-        if (peerConnection && ['connected','connecting','disconnected'].includes(peerConnection.connectionState))
-          callStatus(peerConnection.connectionState === 'connected' ? 'Connected' : peerConnection.connectionState === 'connecting' ? 'Connecting…' : 'Connection interrupted');
-      };
-      showCallUi(true); $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + nameOf(activePeer);
-      callStatus('Calling…'); socket.emit('call:invite', { to: currentCallPeer, kind: currentCallKind });
-      const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer);
-      socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription } });
-    } catch (error) { endCall(false); toast(callMediaErrorMessage(error)); }
+      $('#localCallVideo').srcObject = localStream; $('#localCallVideo').hidden = currentCallKind !== 'video';
+      setupPeerConnection(); setCallControlState(); setCallAudioRoute(true);
+      $('#remoteCallVideo').srcObject = null;
+      showCallUi(true); callStatus('Calling…'); startCallClock(); startCallTone('ringback');
+      socket.emit('call:invite', { to: currentCallPeer, kind: currentCallKind });
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription.toJSON?.() || peerConnection.localDescription } });
+    } catch (error) { endCall(false, 'failed'); toast(callMediaErrorMessage(error)); }
   }
   async function acceptIncomingCall() {
     if (!incomingCall || !socket?.connected) return;
     if (localStorage.getItem(callPermissionToggleKey('microphone')) === 'off') {
-      socket.emit('call:end', { to: incomingCall.from }); incomingCall = null;
+      socket.emit('call:end', { to: incomingCall.from }); incomingCall = null; stopCallTone();
       toast('Microphone is disabled in Settings. Enable it before accepting calls.', 4500); return;
     }
     if (incomingCall.kind === 'video' && localStorage.getItem(callPermissionToggleKey('camera')) === 'off') {
-      socket.emit('call:end', { to: incomingCall.from }); incomingCall = null;
+      socket.emit('call:end', { to: incomingCall.from }); incomingCall = null; stopCallTone();
       toast('Camera is disabled in Settings. Enable it before accepting video calls.', 4500); return;
     }
-    const call = incomingCall; incomingCall = null; currentCallPeer = call.from; currentCallKind = call.kind;
+    const call = incomingCall; incomingCall = null;
+    callDirection = 'incoming'; currentCallPeer = call.from; currentCallKind = call.kind === 'video' ? 'video' : 'audio';
+    callStartedAt = Date.now(); callConnectedAt = 0; isMuted = false; isCameraDisabled = false; isSpeakerEnabled = true; isFrontCamera = true;
+    stopCallTone();
     try {
       localStream = await acquireCallMedia(currentCallKind);
-      $('#localCallVideo').srcObject = localStream; $('#localCallVideo').hidden = currentCallKind !== 'video';
-      $('#remoteCallVideo').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').hidden = true;
-      peerConnection = new RTCPeerConnection(rtcConfig);
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-      peerConnection.ontrack = event => {
-        if (currentCallKind === 'video') { $('#remoteCallVideo').srcObject = event.streams[0]; $('#remoteCallVideo').hidden = false; }
-        else { $('#remoteCallAudio').srcObject = event.streams[0]; $('#remoteCallAudio').play().catch(() => {}); }
-      };
-      peerConnection.onicecandidate = event => { if (event.candidate) socket.emit('call:signal', { to: currentCallPeer, signal: { candidate: event.candidate } }); };
-      peerConnection.onconnectionstatechange = () => { if (peerConnection?.connectionState === 'connected') callStatus('Connected'); };
-      showCallUi(true); $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + call.from;
-      callStatus('Connecting…'); socket.emit('call:accept', { to: currentCallPeer });
-      if (call.description) await peerConnection.setRemoteDescription(call.description);
-      for (const candidate of (call.candidates || [])) { try { await peerConnection.addIceCandidate(candidate); } catch {} }
-      const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
-      socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription } });
-    } catch (error) { endCall(true); toast(callMediaErrorMessage(error)); }
+      $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + (call.displayName || call.from);
+      $('#callAvatar').textContent = (call.displayName || call.from).slice(0,1).toUpperCase();
+      $('#remotePlaceholderAvatar').textContent = (call.displayName || call.from).slice(0,1).toUpperCase();
+      $('#callTimer').hidden = true; $('#localCallVideo').srcObject = localStream;
+      $('#localCallVideo').hidden = currentCallKind !== 'video'; $('#remoteCallVideo').srcObject = null; $('#remoteCallVideo').hidden = true;
+      $('#remoteCallPlaceholder').hidden = currentCallKind !== 'video'; $('#remoteCallAudio').srcObject = null;
+      setupPeerConnection(); setCallControlState(); setCallAudioRoute(true); showCallUi(true); callStatus('Connecting…'); startCallClock();
+      socket.emit('call:accept', { to: currentCallPeer });
+      if (call.description) await setRemoteDescriptionAndFlush(call.description);
+      for (const candidate of (call.candidates || [])) {
+        if (!peerConnection.remoteDescription) pendingRemoteIceCandidates.push(candidate);
+        else { try { await peerConnection.addIceCandidate(candidate); } catch (error) { console.warn('[FBChatCall] initial candidate:', error); } }
+      }
+      if (peerConnection.remoteDescription) {
+        const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
+        socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription.toJSON?.() || peerConnection.localDescription } });
+      }
+    } catch (error) { endCall(true, 'failed'); toast(callMediaErrorMessage(error)); }
   }
   async function handleCallSignal(data) {
     if (!peerConnection || data.from !== currentCallPeer || !data.signal) return;
@@ -968,53 +1117,117 @@
       if (data.signal.description) {
         const description = data.signal.description;
         if (description.type === 'offer' && peerConnection.signalingState === 'stable') {
-          await peerConnection.setRemoteDescription(description);
+          await setRemoteDescriptionAndFlush(description);
           const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
-          socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription } });
+          socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription.toJSON?.() || peerConnection.localDescription } });
         } else if (description.type === 'answer' && peerConnection.signalingState === 'have-local-offer') {
-          await peerConnection.setRemoteDescription(description);
+          await setRemoteDescriptionAndFlush(description);
         }
       }
-      if (data.signal.candidate) await peerConnection.addIceCandidate(data.signal.candidate);
-    } catch (error) { console.warn('WebRTC signaling:', error?.message || error); }
+      if (data.signal.candidate) {
+        if (!peerConnection.remoteDescription) pendingRemoteIceCandidates.push(data.signal.candidate);
+        else await peerConnection.addIceCandidate(data.signal.candidate);
+      }
+    } catch (error) { console.warn('[FBChatCall] signaling:', error?.message || error); }
   }
-  function endCall(notify = true) {
+  function endCall(notify = true, finalState) {
     const peer = currentCallPeer;
     if (notify && peer && socket?.connected) socket.emit('call:end', { to: peer });
+    stopCallTone(); clearInterval(callClockTimer); callClockTimer = null;
+    const duration = callConnectedAt ? Date.now() - callConnectedAt : 0;
+    if (peer && callStartedAt) {
+      const state = finalState || (callConnectedAt ? 'completed' : (callDirection === 'incoming' ? 'missed' : 'cancelled'));
+      storeCallHistory({ id: String(Date.now()) + '-' + Math.random().toString(36).slice(2,8), peer, kind: currentCallKind, direction: callDirection, state, duration, at: new Date().toISOString() });
+    }
     try { peerConnection?.close(); } catch {}
     peerConnection = null;
     if (localStream) localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-    ['localCallVideo','remoteCallVideo','remoteCallAudio'].forEach(id => { const el = $('#'+id); if (el) { el.srcObject = null; } });
-    currentCallPeer = null; incomingCall = null; showCallUi(false);
+    localStream = null; remoteMediaStream = null; pendingRemoteIceCandidates = [];
+    ['localCallVideo','remoteCallVideo','remoteCallAudio'].forEach(id => { const el = $('#'+id); if (el) { try { el.pause?.(); } catch {} el.srcObject = null; } });
+    $('#remoteCallVideo').hidden = true; $('#remoteCallPlaceholder').hidden = true; $('#callTimer').hidden = true;
+    currentCallPeer = null; incomingCall = null; callStartedAt = 0; callConnectedAt = 0;
+    try { if (window.FBChatNative?.endCallAudio) window.FBChatNative.endCallAudio(); } catch {}
+    showCallUi(false);
   }
   function incomingCallDialog(data) {
+    if (!data?.from || !['audio','video'].includes(data.kind)) return;
+    if (peerConnection || incomingCall?.from === data.from) return;
     incomingCall = data;
-    const queued = pendingCallSignals.get(data.from) || [];
-    pendingCallSignals.delete(data.from);
+    const queued = pendingCallSignals.get(data.from) || []; pendingCallSignals.delete(data.from);
     for (const signal of queued) {
       if (signal.description) incomingCall.description = signal.description;
       if (signal.candidate) (incomingCall.candidates ||= []).push(signal.candidate);
     }
-    infoModal('Incoming ' + (data.kind === 'video' ? 'video' : 'voice') + ' call',
-      (data.displayName || data.from) + ' (@' + data.from + ') is calling you.',
+    $('#callTitle').textContent = (data.kind === 'video' ? 'Incoming video call · ' : 'Incoming voice call · ') + (data.displayName || data.from);
+    $('#callAvatar').textContent = (data.displayName || data.from).slice(0,1).toUpperCase();
+    $('#remotePlaceholderAvatar').textContent = (data.displayName || data.from).slice(0,1).toUpperCase();
+    callStatus('Incoming call'); startCallTone('incoming');
+    infoModal('Incoming ' + (data.kind === 'video' ? 'video' : 'voice') + ' call', (data.displayName || data.from) + ' (@' + data.from + ') is calling you.',
       [
-        { label: 'Accept', action: async () => { $('#genericModal').hidden = true; await acceptIncomingCall(); } },
-        { label: 'Decline', className: 'danger-action', action: () => { $('#genericModal').hidden = true; socket?.emit('call:end', { to: data.from }); incomingCall = null; } }
+        { label: 'Accept', className: 'primary', action: async () => { $('#genericModal').hidden = true; stopCallTone(); await acceptIncomingCall(); } },
+        { label: 'Decline', className: 'danger-action', action: () => {
+          $('#genericModal').hidden = true; stopCallTone(); socket?.emit('call:end', { to: data.from });
+          storeCallHistory({ id: String(Date.now()) + '-' + Math.random().toString(36).slice(2,8), peer: data.from, kind: data.kind, direction: 'incoming', state: 'rejected', duration: 0, at: new Date().toISOString() });
+          incomingCall = null;
+        }}
       ]);
+  }
+  async function toggleCamera() {
+    const track = localStream?.getVideoTracks()[0];
+    if (!track) return toast('Camera controls are available during a video call.', 3000);
+    isCameraDisabled = !isCameraDisabled; track.enabled = !isCameraDisabled; setCallControlState();
+    const placeholder = $('#remoteCallPlaceholder');
+    if (placeholder) { placeholder.textContent = isCameraDisabled ? 'Your camera is off' : 'Waiting for the other camera…'; placeholder.hidden = !isCameraDisabled; }
+  }
+  async function flipCamera() {
+    if (!peerConnection || currentCallKind !== 'video' || !navigator.mediaDevices?.getUserMedia) return;
+    const sender = peerConnection.getSenders().find(item => item.track?.kind === 'video');
+    if (!sender) return toast('No camera track is available to switch.');
+    const nextFacing = isFrontCamera ? 'environment' : 'user';
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: nextFacing }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      const nextTrack = fresh.getVideoTracks()[0]; if (!nextTrack) throw new Error('No camera track returned.');
+      await sender.replaceTrack(nextTrack);
+      const previous = localStream.getVideoTracks()[0]; if (previous) { localStream.removeTrack(previous); previous.stop(); }
+      localStream.addTrack(nextTrack); $('#localCallVideo').srcObject = localStream;
+      isFrontCamera = !isFrontCamera; isCameraDisabled = false; setCallControlState();
+      fresh.getTracks().filter(track => track !== nextTrack).forEach(track => track.stop());
+    } catch (error) { toast('Could not switch camera: ' + (error.message || 'camera unavailable'), 4500); }
+  }
+  function toggleMute() {
+    const tracks = localStream?.getAudioTracks() || [];
+    if (!tracks.length) return toast('No microphone track is available.');
+    isMuted = !isMuted; tracks.forEach(track => { track.enabled = !isMuted; }); setCallControlState();
+  }
+  function toggleCallSpeaker() {
+    setCallAudioRoute(!isSpeakerEnabled);
+    toast(isSpeakerEnabled ? 'Speakerphone enabled.' : 'Earpiece mode selected.', 1500);
+  }
+  function minimizeCall() { if (peerConnection) showCallUi(false); }
+  function showCallHistory() {
+    const entries = readCallHistory();
+    if (!entries.length) return infoModal('Calls', 'Recent voice and video calls will appear here on this device.', [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
+    const summary = entries.slice(0,15).map(item => {
+      const direction = item.direction === 'incoming' ? 'Incoming' : 'Outgoing';
+      const type = item.kind === 'video' ? 'video' : 'voice';
+      const state = item.state === 'missed' ? 'missed' : item.state === 'rejected' ? 'declined' : item.state === 'completed' ? formatCallDuration(item.duration || 0) : item.state;
+      return direction + ' ' + type + ' call with @' + item.peer + ' · ' + state + ' · ' + new Date(item.at).toLocaleString();
+    }).join('\n');
+    infoModal('Recent calls', summary, [
+      { label: 'Clear history on this device', className: 'danger-action', action: () => { localStorage.removeItem('fbchat-call-history'); $('#genericModal').hidden = true; toast('Call history cleared on this device.'); } },
+      { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
+    ]);
   }
   function enableMediaControls() {
     if ($('#voiceCallButton')) $('#voiceCallButton').onclick = () => void startCall('audio');
     if ($('#videoCallButton')) $('#videoCallButton').onclick = () => void startCall('video');
     if ($('#endCallButton')) $('#endCallButton').onclick = () => endCall(true);
-    if ($('#muteCallButton')) $('#muteCallButton').onclick = () => {
-      const track = localStream?.getAudioTracks()[0]; if (!track) return;
-      track.enabled = !track.enabled; $('#muteCallButton').textContent = track.enabled ? 'Mute mic' : 'Unmute mic';
-    };
-    if ($('#cameraCallButton')) $('#cameraCallButton').onclick = () => {
-      const track = localStream?.getVideoTracks()[0]; if (!track) return;
-      track.enabled = !track.enabled; $('#cameraCallButton').textContent = track.enabled ? 'Camera off' : 'Camera on';
-    };
+    if ($('#muteCallButton')) $('#muteCallButton').onclick = toggleMute;
+    if ($('#cameraCallButton')) $('#cameraCallButton').onclick = () => void toggleCamera();
+    if ($('#flipCameraButton')) $('#flipCameraButton').onclick = () => void flipCamera();
+    if ($('#speakerCallButton')) $('#speakerCallButton').onclick = toggleCallSpeaker;
+    if ($('#minimizeCallButton')) $('#minimizeCallButton').onclick = () => { if (peerConnection) showCallUi(false); };
+    if ($('#callFloatingButton')) $('#callFloatingButton').onclick = () => showCallUi(true);
     if (socket && !socket.__fbCallHandlers) {
       socket.__fbCallHandlers = true;
       socket.on('call:incoming', incomingCallDialog);
@@ -1024,18 +1237,22 @@
             if (data.signal?.description) incomingCall.description = data.signal.description;
             if (data.signal?.candidate) (incomingCall.candidates ||= []).push(data.signal.candidate);
           } else if (data.from && data.signal) {
-            const queued = pendingCallSignals.get(data.from) || [];
-            queued.push(data.signal);
+            const queued = pendingCallSignals.get(data.from) || []; queued.push(data.signal);
             pendingCallSignals.set(data.from, queued.slice(-64));
           }
           return;
         }
         void handleCallSignal(data);
       });
-      socket.on('call:accepted', () => callStatus('Connecting…'));
+      socket.on('call:accepted', () => { stopCallTone(); callStatus('Connecting…'); });
       socket.on('call:ringing', () => callStatus('Ringing…'));
-      socket.on('call:ended', data => { if (data.from === currentCallPeer || data.from === incomingCall?.from) { endCall(false); toast('Call ended.'); } });
-      socket.on('call:error', data => { callStatus(data.message || 'Call failed'); toast(data.message || 'Call failed'); });
+      socket.on('call:ended', data => {
+        if (data.from === currentCallPeer || data.from === incomingCall?.from) {
+          endCall(false, callConnectedAt ? 'completed' : (callDirection === 'incoming' ? 'missed' : 'cancelled'));
+          toast('Call ended.');
+        }
+      });
+      socket.on('call:error', data => { stopCallTone(); callStatus(data.message || 'Call failed'); toast(data.message || 'Call failed'); });
     }
   }
 
@@ -1355,9 +1572,9 @@
       $('#app').classList.remove('chat-open');
       const screens = {
         updates: ['Updates', 'Status updates and channels will appear here. Status sharing is not available yet.'],
-        communities: ['Communities', 'Your community announcements and group conversations will appear here. Communities are not available yet.'],
-        calls: ['Calls', 'Voice and video calling is not available yet. Your future calls will appear here.']
+        communities: ['Communities', 'Your community announcements and group conversations will appear here. Communities are not available yet.']
       };
+      if (section === 'calls') { showCallHistory(); return; }
       const screen = screens[section];
       if (screen) infoModal(screen[0], screen[1], [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
     };

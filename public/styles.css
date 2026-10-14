@@ -264,3 +264,5 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .call-controls{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin-top:14px}.call-controls button{border:1px solid #36545c;border-radius:9px;padding:10px 14px;background:#1b333b;color:#eaf5f5;font-size:12px}.call-controls .end-call{background:#b32632;border-color:#b32632}
 .call-card p{margin:12px 0 0;text-align:center;color:#91a9b2;font-size:10px;line-height:1.6}
 @media(max-width:720px){.call-overlay{padding:8px}.call-card{padding:11px}.call-video-stage{min-height:240px;aspect-ratio:3/4}.call-video-stage #localCallVideo{width:32%;height:22%}}
+
+.shared-media{display:block;max-width:min(100%,360px);max-height:320px;border-radius:8px;margin:4px 0;object-fit:contain}.media-filename{font-size:10px;color:#9bb8bd;margin:4px 0}

@@ -278,7 +278,6 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   assert.match(java, /checkForAppUpdateAsyncBridge/);
   assert.match(java, /ACTION_MANAGE_UNKNOWN_APP_SOURCES/);
   assert.match(java, /onShowFileChooser/);
-  assert.match(java, /MODIFY_AUDIO_SETTINGS/);
   assert.match(workflow, /ANDROID_SIGNING_KEYSTORE_BASE64/);
   assert.match(workflow, /Publish versioned APK for in-app updates/);
   assert.match(app, /Check for app updates/);

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch } = require('../server');
+const { app, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch, normalizeContactPhone, findContactAccountMatches } = require('../server');
 
 test('native FCM tokens are bounded and whitespace-free', () => {
   assert.equal(validFcmToken('f'.repeat(152)), true);
@@ -207,7 +207,7 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   assert.match(css, /\.messagebox\{/);
   assert.match(css, /@media\(max-width:720px\)/);
   assert.ok(css.includes('.app.chat-open{padding-bottom:0}'));
-  assert.match(sw, /fb-chat-shell-v15/);
+  assert.match(sw, /fb-chat-shell-v16/);
   assert.ok(sw.includes('/styles.css?v=wa-profile-fullscreen-1'));
 });
 
@@ -229,7 +229,7 @@ test('profile opens as a full-screen page and owns the settings controls', () =>
   assert.match(js, /async function renderProfileSettings\(/);
   assert.match(js, /async function settingsDialog\(\) \{\s*await profileDialog\(\)/);
   assert.match(js, /avatar_url: Object\.hasOwn\(person, 'avatar_url'\)/);
-  assert.match(sw, /fb-chat-shell-v15/);
+  assert.match(sw, /fb-chat-shell-v16/);
 });
 
 test('legacy profile avatars are recovered from Storage or migrated from raster data URLs', () => {
@@ -244,6 +244,60 @@ test('legacy profile avatars are recovered from Storage or migrated from raster 
   assert.match(server, /metadata = await ensureStoredAvatarMetadata\(req\.authUser\)/);
   assert.match(server, /avatar_url: visible\.avatar_url, bio: visible\.bio/);
   assert.match(server, /findStoredProfileAvatar\(userId\)/);
+});
+
+test('contact matching normalizes phone numbers and matches email or phone without storing names', () => {
+  const uuidA = '00000000-0000-4000-8000-000000000001';
+  const uuidB = '00000000-0000-4000-8000-000000000002';
+  assert.equal(normalizeContactPhone('+91 98765 43210'), '9876543210');
+  assert.equal(normalizeContactPhone('09876543210'), '9876543210');
+  assert.equal(normalizeContactPhone('12'), '');
+  const accounts = [
+    { id: uuidA, email: 'known@example.com', phone: '' },
+    { id: uuidB, email: 'other@example.com', phone: '+91 91234 56789' }
+  ];
+  const localContacts = [
+    { name: 'Known Person', emails: ['KNOWN@example.com'], phones: [] },
+    { name: 'Other Person', emails: [], phones: ['09123456789'] },
+    { name: 'Not on FB Chat', emails: ['outside@example.com'], phones: ['1234567890'] }
+  ];
+  assert.deepEqual(findContactAccountMatches(localContacts, accounts), [
+    { index: 0, accountId: uuidA },
+    { index: 1, accountId: uuidB }
+  ]);
+  assert.equal(JSON.stringify(findContactAccountMatches(localContacts, accounts)).includes('Known Person'), false);
+});
+
+test('contacts, profile-photo tapping and invite actions are wired without a visible info icon', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  const manifest = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+  const java = fs.readFileSync(path.join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
+  assert.match(html, /data-bottom-nav="contacts"/);
+  assert.match(html, /id="contactsModal"/);
+  assert.match(html, /id="contactsFileInput"/);
+  assert.match(html, /id="userProfileModal"/);
+  assert.match(html, /id="activeAvatar"[^>]*role="button"/);
+  assert.match(html, /id="chatDetails" type="button" hidden/);
+  assert.doesNotMatch(html, /class="iconbtn" id="chatDetails"/);
+  assert.match(js, /avatar\.addEventListener\('click', \(\) => openUserProfile\(person\)\)/);
+  assert.match(js, /async function requestContactImport\(/);
+  assert.match(js, /navigator\.contacts\.select/);
+  assert.match(js, /navigator\.share/);
+  assert.match(js, /api\('\/api\/contacts\/match'/);
+  assert.match(server, /app\.post\('\/api\/contacts\/match'/);
+  assert.match(server, /Contact values are processed in memory only/);
+  assert.match(manifest, /android\.permission\.READ_CONTACTS/);
+  assert.match(java, /hasContactsPermission\(\)/);
+  assert.match(java, /requestContactsAccess\(\)/);
+  assert.match(java, /ContactsContract\.CommonDataKinds\.Phone\.CONTENT_URI/);
+  assert.match(css, /\.user-profile-hero/);
+  assert.match(css, /\.contact-action\.invite-action/);
 });
 
 test('normal user sign-in cleans old oversized auth metadata before the browser receives its JWT', () => {
@@ -376,7 +430,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v15/);
+  assert.match(sw, /fb-chat-shell-v16/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /'Microphone'/);
   assert.match(js, /'Camera'/);
@@ -457,7 +511,7 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v15/);
+  assert.match(sw, /fb-chat-shell-v16/);
 });
 
 
@@ -470,7 +524,7 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
   assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
-  assert.match(gradle, /versionCode 8/);
+  assert.match(gradle, /versionCode 9/);
   assert.match(gradle, /versionName '1\.2\.5'/);
   const java = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'java', 'com', 'codingbotlab', 'fbchat', 'MainActivity.java'), 'utf8');
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'android-apk.yml'), 'utf8');
@@ -513,7 +567,7 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="flipCameraButton"/);
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
-  assert.match(sw, /fb-chat-shell-v15/);
+  assert.match(sw, /fb-chat-shell-v16/);
 });
 
 

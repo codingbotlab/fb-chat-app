@@ -168,7 +168,7 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /async function saveProfile\(event\)/);
   assert.match(js, /async function resizeProfilePhoto\(file\)/);
   assert.match(js, /profile:refresh/);
-  assert.match(html, /styles\.css\?v=profile-admin-2/);
+  assert.ok(html.includes('styles.css?v=wa-compact-1'));
   assert.doesNotMatch(html, /Administrator sign in|admin-chat\.fashionbazz\.in/i);
 });
 
@@ -181,7 +181,7 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
 
-  assert.match(html, /styles\\.css\\?v=wa-compact-1/);
+  assert.ok(html.includes('styles.css?v=wa-compact-1'));
   assert.match(html, /data-bottom-nav="chats"/);
   assert.match(html, /data-bottom-nav="calls"/);
   assert.match(html, /data-bottom-nav="profile"/);
@@ -195,7 +195,7 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   assert.match(css, /\.messagebox\{/);
   assert.match(css, /@media\(max-width:720px\)/);
   assert.match(sw, /fb-chat-shell-v13/);
-  assert.match(sw, /\/styles\.css\?v=wa-compact-1/);
+  assert.ok(sw.includes('/styles.css?v=wa-compact-1'));
 });
 
 test('normal user sign-in cleans old oversized auth metadata before the browser receives its JWT', () => {

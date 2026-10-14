@@ -58,6 +58,9 @@
           <div class="personlabel"><div class="personname" id="activeName">Choose a chat</div><div class="personstatus"><span id="activeStatus">End-to-end encrypted</span></div></div>
         </div>
         <div class="headactions">
+          <button class="iconbtn" id="voiceCallButton" title="Voice call" aria-label="Voice call"><i class="bi bi-telephone" aria-hidden="true"></i></button>
+          <button class="iconbtn" id="videoCallButton" title="Video call" aria-label="Video call"><i class="bi bi-camera-video" aria-hidden="true"></i></button>
+
           <button class="iconbtn" id="searchInChat" title="Search this chat" aria-label="Search this chat"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></button>
           <button class="iconbtn" id="chatDetails" title="Security details" aria-label="Security details"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg></button>
         </div>
@@ -128,6 +131,14 @@
   </section>
 
   <div class="modalback" id="genericModal" hidden><section class="modalcard" role="dialog" aria-modal="true" aria-labelledby="genericTitle"><button class="modalclose" id="genericCancel" aria-label="Close">×</button><h2 id="genericTitle">New chat</h2><p id="genericDescription">Enter a person's username.</p><form id="genericForm"><label id="genericLabel" for="genericInput">Username</label><input id="genericInput" maxlength="24" placeholder="e.g. sana_khan" autocomplete="off" spellcheck="false" required><button class="primary" type="submit" id="genericSubmit">Start chat</button></form><div id="genericFoot" class="modal-foot"></div></section></div>
+  <section class="call-overlay" id="callOverlay" hidden aria-label="Call window">
+    <div class="call-card">
+      <header><strong id="callTitle">Call</strong><span id="callStatus">Connecting…</span></header>
+      <div class="call-video-stage"><video id="remoteCallVideo" autoplay playsinline></video><video id="localCallVideo" autoplay playsinline muted></video><audio id="remoteCallAudio" autoplay></audio></div>
+      <div class="call-controls"><button type="button" id="muteCallButton">Mute mic</button><button type="button" id="cameraCallButton">Camera off</button><button type="button" id="endCallButton" class="end-call">End call</button></div>
+      <p>Calls are peer-to-peer when network conditions allow. Camera/microphone permission is required.</p>
+    </div>
+  </section>
   <div class="toast alert alert-info" id="toast" role="status" aria-live="polite" aria-atomic="true"><i class="bi bi-info-circle-fill" aria-hidden="true"></i><span id="toastMessage"></span></div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script src="/socket.io/socket.io.js"></script>

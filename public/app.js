@@ -25,7 +25,7 @@
     return Uint8Array.from(atob(raw), (character) => character.charCodeAt(0));
   };
   function toast(message, duration = 3500) {
-    $('#toast').textContent = String(message || '');
+    $('#toastMessage').textContent = String(message || '');
     $('#toast').classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => $('#toast').classList.remove('show'), duration);

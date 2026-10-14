@@ -513,7 +513,8 @@ app.get('/api/config', (_req, res) => res.json({
 }));
 app.get('/api/admin/config', (_req, res) => res.json({
   configured,
-  adminConfigured: ADMIN_EMAILS.size > 0
+  adminConfigured: ADMIN_EMAILS.size > 0,
+  supabaseUrl: configured ? SUPABASE_URL : null
 }));
 app.post('/api/admin/login', async (req, res) => {
   if (!configured || !ADMIN_EMAILS.size) {
@@ -662,7 +663,7 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
     if (!validUsername(username)) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Username must be 3–24 letters, numbers, dots or underscores.' });
     if (!validDisplayName(displayName)) return res.status(400).json({ error: 'INVALID_DISPLAY_NAME', message: 'Display name must be 2–40 characters.' });
     if (!validBio(bio)) return res.status(400).json({ error: 'INVALID_BIO', message: 'About must be 160 characters or fewer.' });
-    if (avatarUrl !== null && !validAvatarDataUrl(avatarUrl)) return res.status(400).json({ error: 'INVALID_AVATAR', message: 'Use a PNG, JPEG or WebP profile image under the supported size limit.' });
+    if (avatarUrl !== null && !validAvatarDataUrl(avatarUrl) && !validStoredAvatarUrl(avatarUrl)) return res.status(400).json({ error: 'INVALID_AVATAR', message: 'Use a PNG, JPEG or WebP profile image under the supported size limit.' });
     if (req.profile.username !== username) {
       const existing = await getProfileByUsername(username);
       if (existing && existing.id !== req.authUser.id) return res.status(409).json({ error: 'USERNAME_TAKEN', message: 'That username is already taken.' });
@@ -671,9 +672,9 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
       method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
       body: [{ id: req.authUser.id, username, display_name: displayName }]
     });
-    const storedAvatarUrl = avatarUrl
-      ? await storeProfileAvatar(req.authUser.id, avatarUrl)
-      : null;
+    const storedAvatarUrl = !avatarUrl
+      ? null
+      : (validStoredAvatarUrl(avatarUrl) ? avatarUrl : await storeProfileAvatar(req.authUser.id, avatarUrl));
     const metadataUser = await updateAuthUserMetadata(req.authUser, {
       username, display_name: displayName, bio, avatar_url: storedAvatarUrl
     });

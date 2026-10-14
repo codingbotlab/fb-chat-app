@@ -124,9 +124,18 @@ function validBio(value) {
   return typeof value === 'string' && value.trim().length <= 160 &&
     !/[<>]/.test(value);
 }
+function validStoredAvatarUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    const base = new URL(SUPABASE_URL);
+    return url.protocol === 'https:' && url.origin === base.origin &&
+      /^\/storage\/v1\/object\/public\/fbchat-profiles\/[0-9a-f-]{36}\.jpg$/i.test(url.pathname);
+  } catch { return false; }
+}
 function safeProfileMetadata(metadata = {}) {
   return {
-    avatar_url: validAvatarDataUrl(metadata.avatar_url) ? metadata.avatar_url : null,
+    // Keep image binaries out of auth user_metadata/JWTs: JWT headers must stay small.
+    avatar_url: validStoredAvatarUrl(metadata.avatar_url) ? metadata.avatar_url : null,
     bio: typeof metadata.bio === 'string' && metadata.bio.length <= 160 ? metadata.bio : ''
   };
 }
@@ -164,6 +173,60 @@ async function getAuthUserById(id) {
   });
   if (!response.ok) return null;
   return response.json().catch(() => null);
+}
+async function storeProfileAvatar(userId, dataUrl) {
+  if (!validUuid(userId) || !validAvatarDataUrl(dataUrl)) {
+    throw appError(400, 'INVALID_AVATAR', 'The profile photo is invalid.');
+  }
+  const match = dataUrl.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!match) throw appError(400, 'INVALID_AVATAR', 'The profile photo encoding is invalid.');
+  const bucket = 'fbchat-profiles';
+  const baseHeaders = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY
+  };
+  // Create the small public-avatar bucket if it does not exist yet.
+  const bucketCheck = await fetch(SUPABASE_URL + '/storage/v1/bucket/' + bucket, {
+    headers: baseHeaders, signal: AbortSignal.timeout(8000)
+  });
+  if (bucketCheck.status === 404) {
+    const created = await fetch(SUPABASE_URL + '/storage/v1/bucket', {
+      method: 'POST',
+      headers: Object.assign({}, baseHeaders, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        id: bucket, name: bucket, public: true, file_size_limit: 40000,
+        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp']
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!created.ok && created.status !== 409) {
+      const detail = await created.text().catch(() => '');
+      throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
+        'Profile photo storage could not be prepared (' + created.status + '). ' + detail.slice(0, 120));
+    }
+  } else if (!bucketCheck.ok) {
+    throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE', 'Profile photo storage is unavailable.');
+  }
+  const bytes = Buffer.from(match[1], 'base64');
+  if (!bytes.length || bytes.length > 30_000) {
+    throw appError(400, 'INVALID_AVATAR', 'The compressed profile photo must be under 30 KB.');
+  }
+  const upload = await fetch(SUPABASE_URL + '/storage/v1/object/' + bucket + '/' + userId + '.jpg', {
+    method: 'POST',
+    headers: Object.assign({}, baseHeaders, {
+      'Content-Type': 'image/jpeg',
+      'x-upsert': 'true',
+      'Cache-Control': '3600'
+    }),
+    body: bytes,
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!upload.ok) {
+    const detail = await upload.text().catch(() => '');
+    throw appError(503, 'AVATAR_UPLOAD_FAILED',
+      'Profile photo upload failed (' + upload.status + '). ' + detail.slice(0, 120));
+  }
+  return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.jpg';
 }
 async function updateAuthUserMetadata(user, metadata) {
   const nextMetadata = Object.assign({}, user?.user_metadata || {}, metadata);
@@ -524,12 +587,15 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
       method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
       body: [{ id: req.authUser.id, username, display_name: displayName }]
     });
+    const storedAvatarUrl = avatarUrl
+      ? await storeProfileAvatar(req.authUser.id, avatarUrl)
+      : null;
     const metadataUser = await updateAuthUserMetadata(req.authUser, {
-      username, display_name: displayName, bio, avatar_url: avatarUrl
+      username, display_name: displayName, bio, avatar_url: storedAvatarUrl
     });
     res.json({ profile: publicProfile(
       rows?.[0] || await getProfileById(req.authUser.id),
-      metadataUser.user_metadata || { username, display_name: displayName, bio, avatar_url: avatarUrl }
+      metadataUser.user_metadata || { username, display_name: displayName, bio, avatar_url: storedAvatarUrl }
     ) });
   } catch (error) { next(error); }
 });
@@ -965,4 +1031,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validBio, publicProfile };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile };

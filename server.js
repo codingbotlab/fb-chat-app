@@ -1208,4 +1208,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata };

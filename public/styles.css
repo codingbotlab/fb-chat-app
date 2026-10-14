@@ -731,3 +731,10 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   .lastmsg{margin-top:3px}
   .mobile-bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
+
+
+/* Keep the mobile chat layout compact, like the browser-style WhatsApp Web view. */
+@media(max-width:720px){
+  .mobile-bottom-nav{display:none!important}
+  .app{padding-bottom:0!important}
+}

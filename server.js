@@ -1100,7 +1100,11 @@ io.use(async (socket, next) => {
     if (!user) return next(new Error('AUTH_REQUIRED'));
     const row = await getOrCreateProfile(user);
     if (!row.public_key) return next(new Error('ENCRYPTION_SETUP_REQUIRED'));
-    const visible = safeProfileMetadata(user.user_metadata || {});
+    const authRecord = await getAuthUserById(user.id);
+    const publicMetadata = authRecord
+      ? await ensureStoredAvatarMetadata(authRecord)
+      : (user.user_metadata || {});
+    const visible = safeProfileMetadata(publicMetadata);
     socket.data.user = {
       id: user.id, username: row.username, display_name: row.display_name,
       avatar_url: visible.avatar_url, bio: visible.bio

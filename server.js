@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const express = require('express');
 const { Server } = require('socket.io');
 const webpush = require('web-push');
@@ -39,6 +40,11 @@ const FCM_PROJECT_ID = String(process.env.FCM_PROJECT_ID || '').trim();
 const FCM_SERVICE_ACCOUNT_JSON = String(process.env.FCM_SERVICE_ACCOUNT_JSON || '');
 const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || '')
   .split(',').map((value) => normalize(value)).filter(Boolean));
+// Sign compact, short-lived admin sessions with the service-role secret by default.
+// This avoids placing potentially oversized Supabase user JWTs in browser request headers.
+const ADMIN_SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || SUPABASE_SERVICE_ROLE_KEY || '');
+const ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60;
+const adminLoginAttempts = new Map();
 let fcmMessaging = null;
 if (FCM_SERVICE_ACCOUNT_JSON) {
   try {
@@ -264,12 +270,51 @@ async function exactCount(table) {
   const match = String(response.headers.get('content-range') || '').match(/\/(\d+)$/);
   return match ? Number(match[1]) : null;
 }
-async function requireAdminRole(req, res, next) {
-  const email = normalize(req.authUser?.email);
-  if (!email || !ADMIN_EMAILS.has(email)) {
-    return res.status(403).json({ error: 'ADMIN_REQUIRED', message: 'This email is not on the FB Chat admin allowlist.' });
-  }
+function signAdminSession(user) {
+  if (!ADMIN_SESSION_SECRET) throw appError(503, 'ADMIN_SESSION_UNAVAILABLE', 'Admin session signing is not configured.');
+  const payload = {
+    sub: user.id,
+    email: normalize(user.email),
+    exp: Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SECONDS
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', ADMIN_SESSION_SECRET).update(encoded).digest('base64url');
+  return { token: encoded + '.' + signature, expiresAt: payload.exp };
+}
+function verifyAdminSession(token) {
+  if (!ADMIN_SESSION_SECRET || typeof token !== 'string' || token.length > 2048) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const expected = crypto.createHmac('sha256', ADMIN_SESSION_SECRET).update(parts[0]).digest();
+  let supplied;
+  try { supplied = Buffer.from(parts[1], 'base64url'); } catch { return null; }
+  if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    if (!validUuid(payload.sub) || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    const email = normalize(payload.email);
+    if (!email || !ADMIN_EMAILS.has(email)) return null;
+    return { id: payload.sub, email };
+  } catch { return null; }
+}
+function requireAdminSession(req, res, next) {
+  const match = String(req.headers.authorization || '').match(/^Bearer\\s+(.+)$/i);
+  const user = verifyAdminSession(match?.[1] || '');
+  if (!user) return res.status(401).json({ error: 'ADMIN_SESSION_REQUIRED', message: 'Admin session expired. Please sign in again.' });
+  req.authUser = user;
   next();
+}
+function isRateLimitedAdminLogin(req) {
+  const key = String(req.ip || req.socket?.remoteAddress || 'unknown');
+  const now = Date.now();
+  let attempt = adminLoginAttempts.get(key);
+  if (!attempt || attempt.resetAt <= now) attempt = { count: 0, resetAt: now + 15 * 60 * 1000 };
+  attempt.count += 1;
+  adminLoginAttempts.set(key, attempt);
+  if (adminLoginAttempts.size > 5000) {
+    for (const [entry, value] of adminLoginAttempts) if (value.resetAt <= now) adminLoginAttempts.delete(entry);
+  }
+  return attempt.count > 10;
 }
 function appError(status, code, message) {
   const error = new Error(message);
@@ -468,10 +513,47 @@ app.get('/api/config', (_req, res) => res.json({
 }));
 app.get('/api/admin/config', (_req, res) => res.json({
   configured,
-  adminConfigured: ADMIN_EMAILS.size > 0,
-  supabaseUrl: configured ? SUPABASE_URL : null,
-  supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
+  adminConfigured: ADMIN_EMAILS.size > 0
 }));
+app.post('/api/admin/login', async (req, res) => {
+  if (!configured || !ADMIN_EMAILS.size) {
+    return res.status(503).json({ error: 'ADMIN_NOT_CONFIGURED', message: 'Admin login is not configured on the server.' });
+  }
+  if (isRateLimitedAdminLogin(req)) {
+    return res.status(429).json({ error: 'LOGIN_RATE_LIMITED', message: 'Too many sign-in attempts. Wait 15 minutes and retry.' });
+  }
+  const email = normalize(req.body?.email);
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!email || !password || password.length > 1024) {
+    return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Enter your admin email and password.' });
+  }
+  try {
+    // Supabase validates the credentials; its potentially large access token never returns to the browser.
+    const response = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(12_000)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.user?.id || !result.user?.email) {
+      return res.status(401).json({ error: 'SIGN_IN_FAILED', message: 'Email or password is incorrect.' });
+    }
+    const userEmail = normalize(result.user.email);
+    if (!ADMIN_EMAILS.has(userEmail)) {
+      return res.status(403).json({ error: 'ADMIN_REQUIRED', message: 'This account is not on the FB Chat admin allowlist.' });
+    }
+    adminLoginAttempts.delete(String(req.ip || req.socket?.remoteAddress || 'unknown'));
+    const issued = signAdminSession({ id: result.user.id, email: userEmail });
+    return res.json({
+      token: issued.token,
+      expires_at: issued.expiresAt,
+      user: { email: userEmail }
+    });
+  } catch {
+    return res.status(503).json({ error: 'AUTH_UNAVAILABLE', message: 'Authentication service is temporarily unavailable. Retry shortly.' });
+  }
+});
 function sendAdminPage(_req, res) {
   // The WordPress root-site page embeds this dedicated app origin in an iframe.
   // Allow only the owned root domain to frame the admin login, never arbitrary sites.
@@ -601,7 +683,7 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
     ) });
   } catch (error) { next(error); }
 });
-app.use('/api/admin', requireAuth, requireAdminRole);
+app.use('/api/admin', requireAdminSession);
 
 app.get('/api/admin/overview', async (_req, res, next) => {
   try {

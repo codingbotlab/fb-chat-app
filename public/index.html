@@ -15,6 +15,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet" crossorigin="anonymous">
+  <script>tailwind = { config: { corePlugins: { preflight: false }, darkMode: "class", theme: { extend: { colors: { chat: { page: "#071015", panel: "#111b21", green: "#00a884" } }, boxShadow: { glow: "0 0 32px rgba(0,168,132,.14)" } } } };</script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -66,7 +68,7 @@
           <h2>Message privately.</h2>
           <p>Chat with people by username. Your message is encrypted in your browser before it leaves your device.</p>
           <div class="privacy-note"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><div><strong>Encryption on your device</strong><span>Messages are stored as ciphertext, not readable text.</span></div></div>
-          <button class="primary welcome-action" id="welcomeNewChat">New chat</button>
+          <button class="primary welcome-action transition-all duration-200 hover:shadow-glow active:scale-[.99]" id="welcomeNewChat">New chat</button>
         </div>
       </section>
       <section class="messages" id="messages" hidden aria-live="polite"><div class="daydivider">TODAY</div></section>
@@ -98,8 +100,8 @@
   </div>
 
   <section class="authOverlay" id="authOverlay" aria-modal="true" role="dialog" aria-labelledby="authTitle">
-    <div class="authcard">
-      <div class="auth-brand"><span class="brand-icon">f.</span><span>FB Chat</span></div>
+    <div class="authcard rounded-3xl shadow-glow ring-1 ring-white/10 backdrop-blur-sm">
+      <div class="auth-brand flex items-center gap-3"><span class="brand-icon">f.</span><span>FB Chat</span></div>
       <h2 id="authTitle">Welcome back</h2>
       <p id="authDescription">Sign in to continue your private conversations.</p>
       <div class="auth-tabs"><button type="button" class="auth-tab active" id="loginTab">Sign in</button><button type="button" class="auth-tab" id="signupTab">Create account</button></div>
@@ -111,8 +113,8 @@
         <label for="email">Email address</label><input id="email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com">
         <label for="password">Password</label><input id="password" name="password" type="password" required minlength="10" maxlength="128" autocomplete="current-password" placeholder="At least 10 characters">
         <div class="fieldhint" id="passwordHint">Your password is sent directly to the authentication provider over HTTPS.</div>
-        <button class="primary auth-submit" id="authSubmit" type="submit">Sign in securely</button>
-        <button class="install-app-btn" id="installAppButton" type="button" hidden>Install FB Chat app</button>
+        <button class="primary auth-submit transition-all duration-200 hover:shadow-glow active:scale-[.99]" id="authSubmit" type="submit">Sign in securely</button>
+        <button class="install-app-btn transition-all duration-200 hover:border-emerald-400/50" id="installAppButton" type="button" hidden>Install FB Chat app</button>
       </form>
       <div class="auth-message" id="authMessage" role="status"></div>
       <div class="auth-foot"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>Encrypted message contents are not stored as plain text.</span></div>

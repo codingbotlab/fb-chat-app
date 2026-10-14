@@ -446,6 +446,18 @@
     }
     void openChatByUsername(username);
   }
+  function handleQueuedNotificationCall() {
+    if (!me) return;
+    const params = new URLSearchParams(location.search);
+    const from = params.get('openCall');
+    const kind = params.get('callKind') === 'video' ? 'video' : 'audio';
+    if (!from || !USER_RE.test(from)) return;
+    params.delete('openCall'); params.delete('callKind');
+    history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params.toString() : '') + location.hash);
+    const open = () => incomingCallDialog({ from: from.toLowerCase(), displayName: from, kind });
+    if (socket?.connected) open();
+    else if (socket) socket.once('connect', open);
+  }
   async function checkPeerKey(peer) {
     const fp = await fingerprint(peer.public_key), store = 'fbchat-peer-pin-' + peer.id, prior = localStorage.getItem(store);
     if (prior && prior !== fp) return { trusted: false, fingerprint: fp };
@@ -618,6 +630,7 @@
       try { window.FBChatNative.checkForAppUpdate(); } catch {}
     }
     handleQueuedNotificationChat();
+    handleQueuedNotificationCall();
     void showCallPermissionPrompt();
     if (window.FBChatNative && typeof window.FBChatNative.checkForAppUpdate !== 'function'
         && localStorage.getItem(LEGACY_UPDATE_DISMISSED_KEY) !== 'dismissed'
@@ -1636,5 +1649,16 @@
   };
   window.fbchatOnFcmToken = acceptNativeFcmToken;
   window.fbchatOpenNativeChat = (username) => { void openChatByUsername(username); };
+  window.fbchatOpenNativeCall = (username, kind) => {
+    const open = () => incomingCallDialog({ from: String(username || '').toLowerCase(), displayName: String(username || ''), kind: kind === 'video' ? 'video' : 'audio' });
+    if (socket?.connected) open();
+    else if (socket) socket.once('connect', open);
+    else {
+      const url = new URL(location.href);
+      url.searchParams.set('openCall', String(username || '').toLowerCase());
+      url.searchParams.set('callKind', kind === 'video' ? 'video' : 'audio');
+      location.href = url.toString();
+    }
+  };
   initialize().catch((error) => { console.error('FB Chat initialization failed:', error); showAuth(error.message || 'Could not initialize. Reload the page.', true); });
 })();

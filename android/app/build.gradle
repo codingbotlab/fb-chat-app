@@ -3,6 +3,11 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def stableKeystorePath = System.getenv("FBCHAT_SIGNING_KEYSTORE")
+def stableStorePassword = System.getenv("FBCHAT_SIGNING_STORE_PASSWORD")
+def stableKeyAlias = System.getenv("FBCHAT_SIGNING_KEY_ALIAS")
+def stableKeyPassword = System.getenv("FBCHAT_SIGNING_KEY_PASSWORD")
+
 android {
     namespace 'com.codingbotlab.fbchat'
     compileSdk 35
@@ -11,14 +16,28 @@ android {
         applicationId 'com.codingbotlab.fbchat'
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName '1.2.1'
+        versionCode 5
+        versionName '1.2.2'
+    }
+
+    if (stableKeystorePath && stableStorePassword && stableKeyAlias && stableKeyPassword) {
+        signingConfigs {
+            stableRelease {
+                storeFile file(stableKeystorePath)
+                storePassword stableStorePassword
+                keyAlias stableKeyAlias
+                keyPassword stableKeyPassword
+            }
+        }
     }
 
     buildTypes {
         debug {
             applicationIdSuffix ''
             versionNameSuffix ''
+            if (stableKeystorePath && stableStorePassword && stableKeyAlias && stableKeyPassword) {
+                signingConfig signingConfigs.stableRelease
+            }
         }
         release {
             minifyEnabled false

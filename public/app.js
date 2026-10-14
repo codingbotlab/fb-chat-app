@@ -627,6 +627,8 @@
     if (window.FBChatNative) {
       void syncNativePushToken();
       try { window.FBChatNative.refreshToken(); } catch {}
+      // Legacy native builds need this sign-in check to discover their first in-app update.
+      try { window.FBChatNative.checkForAppUpdate(); } catch {}
     }
     handleQueuedNotificationChat();
     handleQueuedNotificationCall();
@@ -1484,8 +1486,14 @@
           }
           $('#genericModal').hidden = true;
           nativeUpdateCheckManual = true;
-          try { window.FBChatNative.checkForAppUpdate(); }
-          catch { nativeUpdateCheckManual = false; toast('Could not check for updates. Connect to the internet and retry.'); }
+          try {
+            if (typeof window.FBChatNative.checkForAppUpdateNow === 'function') {
+              window.FBChatNative.checkForAppUpdateNow();
+            } else {
+              // Older APKs do not expose the forced-check bridge yet.
+              window.FBChatNative.checkForAppUpdate();
+            }
+          } catch { nativeUpdateCheckManual = false; toast('Could not check for updates. Connect to the internet and retry.'); }
         }
       }, { label: 'Open Android app permissions', action: () => {
         try { window.FBChatNative.openAppSettings(); }

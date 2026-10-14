@@ -728,7 +728,65 @@ app.get('/api/config', (_req, res) => res.json({
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
-app.post('/api/auth/login', async (req, res) => {
+
+const qrPairings = new Map();
+function pruneQrPairings() {
+  const now = Date.now();
+  for (const [id, item] of qrPairings) if (item.expiresAt <= now || item.used) qrPairings.delete(id);
+}
+app.post('/api/qr/start', (req, res) => {
+  pruneQrPairings();
+  if (qrPairings.size > 200) return res.status(503).json({ error: 'QR_BUSY', message: 'Too many QR sessions. Try again shortly.' });
+  const id = crypto.randomBytes(16).toString('hex');
+  const secret = crypto.randomBytes(32).toString('base64url');
+  qrPairings.set(id, { secretHash: crypto.createHash('sha256').update(secret).digest('hex'), expiresAt: Date.now() + 90_000, status: 'pending', result: null, used: false });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ id, secret, expiresIn: 90 });
+});
+app.get('/api/qr/status', (req, res) => {
+  pruneQrPairings();
+  const id = String(req.query.id || ''), secret = String(req.query.secret || '');
+  const item = qrPairings.get(id);
+  if (!item || !secret || !crypto.timingSafeEqual(Buffer.from(item.secretHash), Buffer.from(crypto.createHash('sha256').update(secret).digest('hex')))) {
+    return res.status(404).json({ status: 'expired' });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  if (item.status === 'approved' && item.result) {
+    item.used = true;
+    const result = item.result;
+    qrPairings.delete(id);
+    return res.json({ status: 'approved', session: result });
+  }
+  res.json({ status: item.status, expiresIn: Math.max(0, Math.ceil((item.expiresAt - Date.now()) / 1000)) });
+});
+app.post('/api/qr/approve', async (req, res) => {
+  pruneQrPairings();
+  const id = String(req.body?.id || ''), secret = String(req.body?.secret || '');
+  const match = String(req.headers.authorization || '').match(/^Bearer\\s+(.+)$/i);
+  const item = qrPairings.get(id);
+  if (!item || item.expiresAt <= Date.now() || item.used || item.status !== 'pending') {
+    return res.status(410).json({ error: 'QR_EXPIRED', message: 'This QR code expired. Generate a new one on the PC.' });
+  }
+  const expected = Buffer.from(item.secretHash);
+  const supplied = Buffer.from(crypto.createHash('sha256').update(secret).digest('hex'));
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) {
+    return res.status(403).json({ error: 'QR_INVALID', message: 'Invalid QR pairing code.' });
+  }
+  const token = match?.[1] || '';
+  const user = await authUserFromToken(token);
+  if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Sign in on your phone before approving.' });
+  const session = req.body?.session;
+  if (!session || session.user?.id !== user.id ||
+      typeof session.access_token !== 'string' || session.access_token !== token ||
+      typeof session.refresh_token !== 'string' || session.refresh_token.length < 20) {
+    return res.status(400).json({ error: 'INVALID_SESSION', message: 'The phone session could not be verified.' });
+  }
+  item.status = 'approved';
+  item.result = session;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ok: true });
+});
+\napp.post('/api/auth/login', async (req, res) => {
   if (!configured) {
     return res.status(503).json({ error: 'SERVER_NOT_CONFIGURED', message: 'Sign-in service is not configured. Please try again later.' });
   }

@@ -64,11 +64,20 @@
 
   let draftAvatarUrl = null, profileAvatarDirty = false;
 
+  function validAvatarSource(value) {
+    if (typeof value !== 'string') return false;
+    if (value.length <= 40_000 && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return true;
+    try {
+      const url = new URL(value), base = new URL(config?.supabaseUrl || '');
+      return url.protocol === 'https:' && url.origin === base.origin &&
+        /^\/storage\/v1\/object\/public\/fbchat-profiles\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(url.pathname);
+    } catch { return false; }
+  }
   function setAvatar(element, person) {
     if (!element) return;
     element.replaceChildren();
     const photo = person?.avatar_url;
-    if (typeof photo === 'string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(photo) && photo.length <= 40_000) {
+    if (validAvatarSource(photo)) {
       element.classList.add('has-photo');
       const image = document.createElement('img');
       image.src = photo; image.alt = nameOf(person) + ' profile photo';

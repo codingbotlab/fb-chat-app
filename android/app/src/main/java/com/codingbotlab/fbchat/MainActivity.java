@@ -161,6 +161,17 @@ public final class MainActivity extends Activity {
         });
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                Uri page = Uri.parse(url == null ? "" : url);
+                if ("https".equalsIgnoreCase(page.getScheme())
+                        && APP_HOST.equalsIgnoreCase(page.getHost())) {
+                    // Let the JavaScript update callback register before asking GitHub.
+                    checkForAppUpdateIfDue();
+                }
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return handleNavigation(request.getUrl());
             }
@@ -373,7 +384,20 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private static final long AUTO_UPDATE_CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L;
+    private static final String PREF_LAST_AUTO_UPDATE_CHECK = "last_auto_update_check_ms";
+
+    private void checkForAppUpdateIfDue() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        long last = prefs.getLong(PREF_LAST_AUTO_UPDATE_CHECK, 0L);
+        if (last > 0L && now - last < AUTO_UPDATE_CHECK_INTERVAL_MS) return;
+        prefs.edit().putLong(PREF_LAST_AUTO_UPDATE_CHECK, now).apply();
+        checkForAppUpdate();
+    }
+
     private void checkForAppUpdateAsyncBridge() {
+        // Explicit Settings action always performs a fresh check.
         checkForAppUpdate();
     }
 
@@ -630,6 +654,13 @@ public final class MainActivity extends Activity {
         super.onResume();
         appVisible = true;
         refreshFcmToken();
+        if (webView != null && webView.getProgress() >= 100) {
+            Uri page = Uri.parse(webView.getUrl() == null ? "" : webView.getUrl());
+            if ("https".equalsIgnoreCase(page.getScheme())
+                    && APP_HOST.equalsIgnoreCase(page.getHost())) {
+                checkForAppUpdateIfDue();
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && pendingUpdateUrl != null && getPackageManager().canRequestPackageInstalls()) {
             String url = pendingUpdateUrl;

@@ -188,7 +188,7 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   assert.doesNotMatch(html, /data-bottom-nav="settings"/);
   assert.doesNotMatch(html, /data-bottom-nav="updates"|data-bottom-nav="communities"/);
   assert.doesNotMatch(html, /data-rail="updates"|data-rail="communities"/);
-  assert.match(js, /if \(section === 'profile'\) \{ profileDialog\(\); return; \}/);
+  assert.match(js, /if \(section === 'profile'\) \{ void profileDialog\(\); return; \}/);
   assert.match(js, /if \(section === 'settings'\) \{ void settingsDialog\(\); return; \}/);
   assert.match(css, /grid-template-columns:58px minmax\(300px,360px\) minmax\(0,1fr\)/);
   assert.match(css, /\.chatitem\{gap:10px;min-height:67px;padding:8px 8px/);
@@ -216,7 +216,7 @@ test('profile opens as a full-screen page and owns the settings controls', () =>
   assert.match(css, /\.profile-setting-row/);
   assert.match(js, /async function renderProfileSettings\(/);
   assert.match(js, /async function settingsDialog\(\) \{\s*await profileDialog\(\)/);
-  assert.match(js, /profile\.avatar_url: Object\.hasOwn/);
+  assert.match(js, /avatar_url: Object\.hasOwn\(person, 'avatar_url'\)/);
   assert.match(sw, /fb-chat-shell-v15/);
 });
 

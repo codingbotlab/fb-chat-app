@@ -607,6 +607,50 @@ io.on('connection', (socket) => {
       if (peerSocket) io.to(peerSocket).emit('chat:typing', { from: user.username, active: Boolean(data.active) });
     }).catch(() => {});
   });
+
+  // Authenticated one-to-one WebRTC signaling. Media travels peer-to-peer; the server only relays call setup.
+  const callRate = new Map();
+  function validSignalPayload(value) {
+    try { return value && typeof value === 'object' && JSON.stringify(value).length <= 48_000; }
+    catch { return false; }
+  }
+  socket.on('call:invite', async (data = {}) => {
+    try {
+      const now = Date.now(), prior = callRate.get(user.id) || 0;
+      if (now - prior < 1500) return socket.emit('call:error', { message: 'Please wait before placing another call.' });
+      callRate.set(user.id, now);
+      const username = normalize(data.to), kind = data.kind === 'video' ? 'video' : 'audio';
+      if (!validUsername(username) || username === user.username) return socket.emit('call:error', { message: 'Choose a valid contact.' });
+      const peer = await getProfileByUsername(username);
+      if (!peer?.public_key) return socket.emit('call:error', { message: 'Contact not found or not ready.' });
+      const peerSocket = online.get(peer.id);
+      if (!peerSocket) return socket.emit('call:error', { message: 'This contact is offline. Ask them to open FB Chat to receive the call.' });
+      io.to(peerSocket).emit('call:incoming', { from: user.username, displayName: user.display_name, kind });
+      socket.emit('call:ringing', { to: username, kind });
+    } catch { socket.emit('call:error', { message: 'Could not start the call.' }); }
+  });
+  socket.on('call:accept', async (data = {}) => {
+    const username = normalize(data.to);
+    if (!validUsername(username) || username === user.username) return;
+    const peer = await getProfileByUsername(username).catch(() => null);
+    const peerSocket = peer && online.get(peer.id);
+    if (peerSocket) io.to(peerSocket).emit('call:accepted', { from: user.username });
+  });
+  socket.on('call:signal', async (data = {}) => {
+    const username = normalize(data.to);
+    if (!validUsername(username) || username === user.username || !validSignalPayload(data.signal)) return;
+    const peer = await getProfileByUsername(username).catch(() => null);
+    const peerSocket = peer && online.get(peer.id);
+    if (peerSocket) io.to(peerSocket).emit('call:signal', { from: user.username, signal: data.signal });
+  });
+  socket.on('call:end', async (data = {}) => {
+    const username = normalize(data.to);
+    if (!validUsername(username) || username === user.username) return;
+    const peer = await getProfileByUsername(username).catch(() => null);
+    const peerSocket = peer && online.get(peer.id);
+    if (peerSocket) io.to(peerSocket).emit('call:ended', { from: user.username });
+  });
+
   socket.on('disconnect', () => {
     if (online.get(user.id) === socket.id) online.delete(user.id);
     socketUsers.delete(socket.id);

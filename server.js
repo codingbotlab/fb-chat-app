@@ -50,7 +50,9 @@ if (FCM_SERVICE_ACCOUNT_JSON) {
       projectId
     }, 'fb-chat-fcm');
     fcmMessaging = getMessaging(fcmApp);
-  } catch {
+    console.info('[FCM] Admin messaging initialized; project configured:', Boolean(projectId));
+  } catch (error) {
+    console.error('[FCM] Admin initialization failed:', error?.message || 'unknown configuration error');
     // Native push stays disabled on bad/missing configuration; chat still starts.
     fcmMessaging = null;
   }
@@ -221,6 +223,7 @@ async function sendNativePushToUser(userId, payload) {
       },
       android: { priority: 'high', ttl: 60 * 1000 }
     });
+    console.info('[FCM] Send result:', JSON.stringify({ successCount: response.successCount, failureCount: response.failureCount, errors: response.responses.filter(item => item.error).map(item => item.error.code || 'unknown').slice(0, 10) }));
     const removals = [];
     response.responses.forEach((item, index) => {
       const code = item.error?.code || '';
@@ -233,7 +236,8 @@ async function sendNativePushToUser(userId, payload) {
       }
     });
     await Promise.all(removals);
-  } catch {
+  } catch (error) {
+    console.error('[FCM] Push send failed:', error?.code || error?.message || 'unknown error');
     // Push delivery is best effort and must never fail message persistence.
   }
 }
@@ -364,8 +368,12 @@ app.post('/api/fcm/register', requireAuth, async (req, res, next) => {
         updated_at: new Date().toISOString()
       }]
     });
+    console.info('[FCM] Device token registered for authenticated account');
     res.json({ ok: true, configured: Boolean(fcmMessaging) });
-  } catch (error) { next(error); }
+  } catch (error) {
+    console.error('[FCM] Token registration failed:', error?.code || error?.message || 'unknown error');
+    next(error);
+  }
 });
 app.delete('/api/fcm/register', requireAuth, async (req, res, next) => {
   try {

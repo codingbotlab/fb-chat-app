@@ -397,6 +397,11 @@ public final class MainActivity extends Activity {
     }
 
     private void checkForAppUpdateAsyncBridge() {
+        // Backward-compatible automatic check called by older web bundles.
+        checkForAppUpdateIfDue();
+    }
+
+    private void checkForAppUpdateNowAsyncBridge() {
         // Explicit Settings action always performs a fresh check.
         checkForAppUpdate();
     }
@@ -797,6 +802,11 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void checkForAppUpdate() {
             checkForAppUpdateAsyncBridge();
+        }
+
+        @JavascriptInterface
+        public void checkForAppUpdateNow() {
+            checkForAppUpdateNowAsyncBridge();
         }
 
         @JavascriptInterface

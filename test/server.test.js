@@ -283,3 +283,27 @@ test('Android WebRTC manifest includes audio routing permission and bumped relea
   assert.match(app, /Check for app updates/);
   assert.match(app, /fbchatOnNativeUpdateCheck/);
 });
+
+
+test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio controls, and call history', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  assert.match(js, /function attachRemoteTrack\(event\)/);
+  assert.match(js, /new MediaStream\(\)/);
+  assert.match(js, /pendingRemoteIceCandidates/);
+  assert.match(js, /speakerCallButton/);
+  assert.match(js, /startCallTone\('incoming'\)/);
+  assert.match(js, /async function flipCamera\(\)/);
+  assert.match(js, /function showCallHistory\(\)/);
+  assert.match(html, /id="remoteCallPlaceholder"/);
+  assert.match(html, /id="speakerCallButton"/);
+  assert.match(html, /id="flipCameraButton"/);
+  assert.match(html, /id="callFloatingButton"/);
+  assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
+  assert.match(sw, /fb-chat-shell-v10/);
+});

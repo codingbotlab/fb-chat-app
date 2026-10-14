@@ -612,10 +612,14 @@
       $('#chatDetails').dataset.keyChanged = 'false';
       const data = await api('/api/chats/' + encodeURIComponent(person.username) + '/messages');
       if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
-      addChat(data.peer);
+      activePeer = Object.assign({}, person, data.peer || {});
+      setAvatar($('#activeAvatar'), activePeer);
+      $('#activeName').textContent = nameOf(activePeer);
+      $('#activeStatus').title = activePeer.bio || '';
+      addChat(activePeer);
       const history = [];
       for (const message of data.messages || []) {
-        const decoded = decodeMessageContent(await decryptText(message, person));
+        const decoded = decodeMessageContent(await decryptText(message, activePeer));
         history.push(Object.assign({}, message, decoded));
       }
       if (requestId !== chatOpenRequest || activePeer?.id !== person.id) return;
@@ -648,6 +652,8 @@
     await ensureEncryption(profile, me.id, password || '');
     $('#authOverlay').classList.remove('show');
     $('#profileButton').title = nameOf(profile) + ' · profile';
+    setAvatar($('#profileButton'), profile);
+    $('#profileButton').setAttribute('aria-label', nameOf(profile) + ' profile');
     setConnected(false, 'Connecting securely…');
     await loadChats();
     startSocket();
@@ -1682,6 +1688,34 @@
     });
     $('#chatDetails').addEventListener('click', securityDialog);
     $('#profileButton').addEventListener('click', profileDialog);
+    $('#mobileProfileButton').addEventListener('click', profileDialog);
+    $('#profileClose').addEventListener('click', closeProfileDialog);
+    $('#profileModal').addEventListener('click', (event) => {
+      if (event.target === $('#profileModal')) closeProfileDialog();
+    });
+    $('#profileForm').addEventListener('submit', saveProfile);
+    $('#profileBioInput').addEventListener('input', () => {
+      $('#profileBioCount').textContent = String($('#profileBioInput').value.length);
+    });
+    $('#chooseAvatarButton').addEventListener('click', () => $('#profileAvatarFile').click());
+    $('#removeAvatarButton').addEventListener('click', () => {
+      draftAvatarUrl = null; profileAvatarDirty = true; updateProfileAvatarPreview();
+    });
+    $('#profileAvatarFile').addEventListener('change', async () => {
+      const file = $('#profileAvatarFile').files?.[0];
+      if (!file) return;
+      const button = $('#chooseAvatarButton'); button.disabled = true; button.textContent = 'Preparing…';
+      try {
+        draftAvatarUrl = await resizeProfilePhoto(file); profileAvatarDirty = true; updateProfileAvatarPreview();
+        $('#profileSaveError').textContent = '';
+      } catch (error) { $('#profileSaveError').textContent = error.message || 'Could not use that photo.'; }
+      finally { button.disabled = false; button.textContent = 'Change photo'; $('#profileAvatarFile').value = ''; }
+    });
+    $('#profileSecurityButton').addEventListener('click', () => { closeProfileDialog(); void securityDialog(); });
+    $('#profileSignOutButton').addEventListener('click', () => { closeProfileDialog(); void signOut(); });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !$('#profileModal').hidden) closeProfileDialog();
+    });
     $('#settingsButton').addEventListener('click', settingsDialog);
     $('#mobileSettingsButton').addEventListener('click', settingsDialog);
     const bottomNavItems = $$('[data-bottom-nav]');

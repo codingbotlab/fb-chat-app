@@ -78,6 +78,18 @@ test('oversized auth metadata cleanup explicitly nulls old SVG/Base64 values bef
   assert.equal(appPatch.oversized_claim, null);
 });
 
+test('profile-photo storage uses bucket listing instead of assuming a missing bucket is HTTP 404', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(server, /async function ensureProfileAvatarBucket\(baseHeaders\)/);
+  assert.match(server, /\/storage\/v1\/bucket\//);
+  assert.match(server, /const existing = buckets\.find\(\(item\) => item\?\.id === bucket \|\| item\?\.name === bucket\)/);
+  assert.match(server, /method: 'PUT'[\s\S]{0,260}public: true/);
+  assert.match(server, /await ensureProfileAvatarBucket\(baseHeaders\)/);
+  assert.match(server, /Profile photo storage is unavailable \(HTTP /);
+});
+
 test('profile photo and about metadata are size-limited and safely exposed', () => {
   assert.equal(validAvatarDataUrl('data:image/jpeg;base64,Zm9v'), true);
   assert.equal(validAvatarDataUrl('data:image/svg+xml;base64,PHN2Zy8+'), false);

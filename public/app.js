@@ -5,6 +5,27 @@
   const te = new TextEncoder();
   const td = new TextDecoder();
   const USER_RE = /^[a-z0-9_.]{3,24}$/;
+
+  // Keep mobile system/browser Back gestures inside the app's current screen.
+  // Each in-app screen adds a history entry; popstate closes the topmost view.
+  function pushAppView(view) {
+    try {
+      const state = Object.assign({}, history.state || {}, { fbchatView: view, fbchatEntry: Date.now() + Math.random() });
+      history.pushState(state, '', location.href);
+    } catch (error) { console.debug('Could not add app navigation state:', error); }
+  }
+  function handleAppBack() {
+    if (!$('#userProfileModal').hidden) { closeUserProfile(); return true; }
+    if (!$('#contactsModal').hidden) { closeContactsPage(); return true; }
+    if (!$('#profileModal').hidden) { closeProfileDialog(); return true; }
+    if (!$('#genericModal').hidden) { $('#genericModal').hidden = true; return true; }
+    if ($('#app').classList.contains('chat-open')) {
+      chatOpenRequest++;
+      $('#app').classList.remove('chat-open');
+      return true;
+    }
+    return false;
+  }
   const KDF_ITERATIONS = 310000;
 
   let config = null, session = null, me = null, profile = null, privateKey = null;
@@ -616,6 +637,7 @@
   async function openChat(person) {
     if (!person || person.id === me?.id || !person.public_key) { toast('This person has not finished encryption setup.'); return; }
     const requestId = ++chatOpenRequest;
+    pushAppView('chat');
     activePeer = person; changedFingerprint = null; unread.set(person.id, 0);
     $('#welcome').hidden = true; $('#convHead').hidden = false; $('#messages').hidden = false; $('#composerWrap').hidden = false;
     $('#activeName').textContent = nameOf(person); setAvatar($('#activeAvatar'), person);
@@ -834,6 +856,7 @@
   }
   function openUserProfile(person) {
     if (!person?.id || person.id === me?.id) return;
+    pushAppView('contact-info');
     profileReturnToContacts = !$('#contactsModal').hidden;
     viewedPeer = Object.assign({}, person);
     $('#userProfileName').textContent = nameOf(person);
@@ -1025,6 +1048,7 @@
   }
   function openContactsPage() {
     if (!me) { showAuth('Sign in before opening contacts.'); return; }
+    pushAppView('contacts');
     $('#profileModal').hidden = true;
     $('#userProfileModal').hidden = true;
     $('#genericModal').hidden = true;
@@ -1749,6 +1773,7 @@
   function closeProfileDialog() { $('#profileModal').hidden = true; }
   async function profileDialog() {
     if (!me || !profile) return;
+    pushAppView('profile-settings');
     draftAvatarUrl = profile.avatar_url || null; profileAvatarDirty = false;
     $('#profileNameInput').value = profile.display_name || '';
     $('#profileUsernameInput').value = profile.username || '';
@@ -2203,6 +2228,7 @@
     });
     $('#profileSignOutButton').addEventListener('click', () => { closeProfileDialog(); void signOut(); });
     $('#userProfileDoneButton').addEventListener('click', closeUserProfile);
+    window.addEventListener('popstate', () => { handleAppBack(); });
     window.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
       if (!$('#userProfileModal').hidden) closeUserProfile();

@@ -129,7 +129,7 @@ function validStoredAvatarUrl(value) {
     const url = new URL(String(value || ''));
     const base = new URL(SUPABASE_URL);
     return url.protocol === 'https:' && url.origin === base.origin &&
-      /^\/storage\/v1\/object\/public\/fbchat-profiles\/[0-9a-f-]{36}\.jpg$/i.test(url.pathname);
+      /^\/storage\/v1\/object\/public\/fbchat-profiles\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(url.pathname);
   } catch { return false; }
 }
 function safeProfileMetadata(metadata = {}) {
@@ -178,8 +178,10 @@ async function storeProfileAvatar(userId, dataUrl) {
   if (!validUuid(userId) || !validAvatarDataUrl(dataUrl)) {
     throw appError(400, 'INVALID_AVATAR', 'The profile photo is invalid.');
   }
-  const match = dataUrl.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+  const match = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
   if (!match) throw appError(400, 'INVALID_AVATAR', 'The profile photo encoding is invalid.');
+  const contentType = match[1] === 'jpeg' ? 'image/jpeg' : 'image/' + match[1];
+  const extension = match[1] === 'jpeg' ? 'jpg' : match[1];
   const bucket = 'fbchat-profiles';
   const baseHeaders = {
     apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -207,14 +209,14 @@ async function storeProfileAvatar(userId, dataUrl) {
   } else if (!bucketCheck.ok) {
     throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE', 'Profile photo storage is unavailable.');
   }
-  const bytes = Buffer.from(match[1], 'base64');
+  const bytes = Buffer.from(match[2], 'base64');
   if (!bytes.length || bytes.length > 30_000) {
     throw appError(400, 'INVALID_AVATAR', 'The compressed profile photo must be under 30 KB.');
   }
-  const upload = await fetch(SUPABASE_URL + '/storage/v1/object/' + bucket + '/' + userId + '.jpg', {
+  const upload = await fetch(SUPABASE_URL + '/storage/v1/object/' + bucket + '/' + userId + '.' + extension, {
     method: 'POST',
     headers: Object.assign({}, baseHeaders, {
-      'Content-Type': 'image/jpeg',
+      'Content-Type': contentType,
       'x-upsert': 'true',
       'Cache-Control': '3600'
     }),
@@ -226,7 +228,7 @@ async function storeProfileAvatar(userId, dataUrl) {
     throw appError(503, 'AVATAR_UPLOAD_FAILED',
       'Profile photo upload failed (' + upload.status + '). ' + detail.slice(0, 120));
   }
-  return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.jpg';
+  return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.' + extension;
 }
 async function updateAuthUserMetadata(user, metadata) {
   const nextMetadata = Object.assign({}, user?.user_metadata || {}, metadata);

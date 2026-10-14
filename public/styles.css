@@ -733,10 +733,9 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 }
 
 
-/* Keep the mobile chat layout compact, like the browser-style WhatsApp Web view. */
+/* Restore bottom navigation on the Chats screen; overlays cover it while profiles are open. */
 @media(max-width:720px){
-  .mobile-bottom-nav{display:none!important}
-  .app{padding-bottom:0!important}
+  .mobile-bottom-nav{display:grid}
 }
 
 

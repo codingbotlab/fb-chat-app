@@ -61,6 +61,23 @@
   function online(id) {
     return onlineUsers.some((person) => person.id === id);
   }
+
+  let draftAvatarUrl = null, profileAvatarDirty = false;
+
+  function setAvatar(element, person) {
+    if (!element) return;
+    element.replaceChildren();
+    const photo = person?.avatar_url;
+    if (typeof photo === 'string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(photo) && photo.length <= 90_000) {
+      element.classList.add('has-photo');
+      const image = document.createElement('img');
+      image.src = photo; image.alt = nameOf(person) + ' profile photo';
+      element.appendChild(image);
+    } else {
+      element.classList.remove('has-photo');
+      element.textContent = nameOf(person).slice(0, 1).toUpperCase();
+    }
+  }
   function dateLabel(value) {
     if (!value) return '';
     const date = new Date(value), today = new Date();
@@ -491,7 +508,7 @@
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'chatitem' + (activePeer?.id === person.id ? ' active' : '');
       const avatar = document.createElement('div');
-      avatar.className = 'chatavatar'; avatar.textContent = nameOf(person).slice(0, 1).toUpperCase();
+      avatar.className = 'chatavatar'; setAvatar(avatar, person);
       if (isHere) { const dot = document.createElement('span'); dot.className = 'online-dot'; avatar.appendChild(dot); }
       const body = document.createElement('div'); body.className = 'chatbody';
       const row = document.createElement('div'); row.className = 'chatrow';
@@ -578,7 +595,8 @@
     const requestId = ++chatOpenRequest;
     activePeer = person; changedFingerprint = null; unread.set(person.id, 0);
     $('#welcome').hidden = true; $('#convHead').hidden = false; $('#messages').hidden = false; $('#composerWrap').hidden = false;
-    $('#activeName').textContent = nameOf(person); $('#activeAvatar').textContent = nameOf(person).slice(0, 1).toUpperCase();
+    $('#activeName').textContent = nameOf(person); setAvatar($('#activeAvatar'), person);
+    $('#activeStatus').title = person.bio || '';
     $('#activeStatus').textContent = connected ? (online(person.id) ? 'online' : 'end-to-end encrypted') : 'Connecting…';
     $('#app').classList.add('chat-open'); renderChats();
     try {
@@ -610,7 +628,16 @@
   }
   async function loadChats() {
     const data = await api('/api/chats'); chats = new Map();
-    for (const item of data.chats || []) addChat(item.peer, Object.assign({}, item.last_message, { preview: '🔒 Encrypted message' }));
+    for (const item of data.chats || []) {
+      const latest = item.last_message ? Object.assign({}, item.last_message) : null;
+      if (latest?.ciphertext && latest.iv && item.peer?.public_key) {
+        const decoded = decodeMessageContent(await decryptText(latest, item.peer));
+        latest.preview = decoded.media
+          ? (decoded.media.mime?.startsWith('image/') ? '📷 Photo' : decoded.media.mime?.startsWith('video/') ? '🎬 Video' : '🎵 Audio')
+          : (decoded.plaintext || '').trim().replace(/\s+/g, ' ').slice(0, 120) || '🔒 Encrypted message';
+      } else latest && (latest.preview = '🔒 Encrypted message');
+      addChat(item.peer, latest);
+    }
     renderChats();
   }
   async function applySession(password) {
@@ -1327,11 +1354,81 @@
     clearSession(); renderChats(); $('#genericModal').hidden = true; $('#authOverlay').classList.add('show');
     setAuthMode('login', 'Signed out successfully.');
   }
+  function updateProfileAvatarPreview() {
+    const target = $('#profileAvatarPreview');
+    target.replaceChildren();
+    if (draftAvatarUrl) {
+      const image = document.createElement('img'); image.src = draftAvatarUrl; image.alt = 'Profile photo preview';
+      target.appendChild(image);
+    } else target.textContent = nameOf(profile).slice(0, 1).toUpperCase();
+  }
+  function closeProfileDialog() { $('#profileModal').hidden = true; }
   async function profileDialog() {
     if (!me || !profile) return;
-    infoModal('Your account', nameOf(profile) + '\n@' + profile.username + '\n' + (me.email || ''),
-      [{ label: 'Sign out', className: 'danger-action', action: signOut },
-       { label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
+    draftAvatarUrl = profile.avatar_url || null; profileAvatarDirty = false;
+    $('#profileNameInput').value = profile.display_name || '';
+    $('#profileUsernameInput').value = profile.username || '';
+    $('#profileBioInput').value = profile.bio || '';
+    $('#profileBioCount').textContent = String($('#profileBioInput').value.length);
+    $('#profileEmailLabel').textContent = me.email || '';
+    $('#profileSaveError').textContent = '';
+    $('#profileSaveButton').disabled = false;
+    $('#profileSaveButton').textContent = 'Save changes';
+    updateProfileAvatarPreview();
+    $('#genericModal').hidden = true;
+    $('#profileModal').hidden = false;
+    $('#profileNameInput').focus();
+  }
+  async function resizeProfilePhoto(file) {
+    if (!file || !/^image\/(?:jpeg|png|webp)$/i.test(file.type)) throw new Error('Choose a JPG, PNG or WebP image.');
+    if (file.size > 10 * 1024 * 1024) throw new Error('Choose a photo smaller than 10 MB.');
+    const source = await new Promise((resolve, reject) => {
+      const image = new Image(), url = URL.createObjectURL(file);
+      image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not open that image.')); };
+      image.src = url;
+    });
+    const side = 512, canvas = document.createElement('canvas');
+    canvas.width = side; canvas.height = side;
+    const context = canvas.getContext('2d', { alpha: false });
+    const crop = Math.min(source.naturalWidth, source.naturalHeight);
+    const sx = (source.naturalWidth - crop) / 2, sy = (source.naturalHeight - crop) / 2;
+    context.drawImage(source, sx, sy, crop, crop, 0, 0, side, side);
+    for (const quality of [0.82, 0.68, 0.54, 0.42]) {
+      const value = canvas.toDataURL('image/jpeg', quality);
+      if (value.length <= 88_000) return value;
+    }
+    throw new Error('That photo is too detailed to compress. Try another image.');
+  }
+  async function saveProfile(event) {
+    event.preventDefault();
+    if (!me || !profile) return;
+    const username = norm($('#profileUsernameInput').value);
+    const displayName = $('#profileNameInput').value.trim();
+    const bio = $('#profileBioInput').value.trim();
+    if (!USER_RE.test(username)) { $('#profileSaveError').textContent = 'Username must be 3–24 letters, numbers, dots or underscores.'; return; }
+    if (displayName.length < 2 || displayName.length > 40 || /[<>]/.test(displayName)) { $('#profileSaveError').textContent = 'Display name must be 2–40 characters.'; return; }
+    $('#profileSaveButton').disabled = true; $('#profileSaveButton').textContent = 'Saving…'; $('#profileSaveError').textContent = '';
+    try {
+      const avatar = profileAvatarDirty ? draftAvatarUrl : (profile.avatar_url || null);
+      const data = await api('/api/profile', {
+        method: 'POST',
+        body: JSON.stringify({ username, display_name: displayName, bio, avatar_url: avatar })
+      });
+      profile = Object.assign({}, profile, data.profile);
+      $('#profileButton').title = nameOf(profile) + ' · profile';
+      if (socket?.connected) socket.emit('profile:refresh');
+      if (activePeer) {
+        const newer = chats.get(activePeer.id);
+        if (newer) { newer.peer = activePeer; chats.set(activePeer.id, newer); }
+      }
+      renderChats(); updateProfileAvatarPreview(); closeProfileDialog();
+      toast('Profile updated successfully.');
+    } catch (error) {
+      $('#profileSaveError').textContent = error.message || 'Could not save profile. Try again.';
+    } finally {
+      $('#profileSaveButton').disabled = false; $('#profileSaveButton').textContent = 'Save changes';
+    }
   }
   const CALL_PERMISSION_PROMPT_KEY = 'fbchat-call-permission-prompt-v1';
   const LEGACY_ANDROID_UPDATE_URL = 'https://github.com/codingbotlab/fb-chat-app/releases/latest/download/FBChat-latest.apk';

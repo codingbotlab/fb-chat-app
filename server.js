@@ -707,12 +707,14 @@ app.get('/api/chats', requireAuth, async (req, res, next) => {
   try {
     const id = req.authUser.id;
     const rows = await db('chat_messages',
-      'select=id,sender_id,recipient_id,created_at,delivered_at,read_at&or=(sender_id.eq.' +
+      'select=id,sender_id,recipient_id,ciphertext,iv,created_at,delivered_at,read_at&or=(sender_id.eq.' +
       id + ',recipient_id.eq.' + id + ')&order=created_at.desc&limit=500');
     const ids = [...new Set((rows || []).map(m => m.sender_id === id ? m.recipient_id : m.sender_id))];
     const profiles = ids.length ? await db('profiles',
       'select=id,username,display_name,public_key,created_at&id=in.(' + ids.join(',') + ')') : [];
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+    const authUsers = ids.length ? await fetchAuthUsers(1, 1000) : [];
+    const metadataById = new Map(authUsers.filter((item) => ids.includes(item.id)).map((item) => [item.id, item.user_metadata || {}]));
     const latest = new Map();
     for (const message of rows || []) {
       const peerId = message.sender_id === id ? message.recipient_id : message.sender_id;
@@ -721,8 +723,9 @@ app.get('/api/chats', requireAuth, async (req, res, next) => {
     const chats = [...latest.entries()].map(([peerId, message]) => {
       const peer = profileMap.get(peerId);
       if (!peer) return null;
-      return { peer: publicProfile(peer), last_message: {
+      return { peer: publicProfile(peer, metadataById.get(peerId) || {}), last_message: {
         id: message.id, sender_id: message.sender_id, recipient_id: message.recipient_id,
+        ciphertext: message.ciphertext, iv: message.iv,
         created_at: message.created_at, delivered_at: message.delivered_at, read_at: message.read_at
       }};
     }).filter(Boolean).sort((a, b) => new Date(b.last_message.created_at) - new Date(a.last_message.created_at));
@@ -785,6 +788,18 @@ io.on('connection', (socket) => {
   socket.emit('session:ready', { user, onlineUsers: [...socketUsers.values()] });
   broadcastPresence();
   flushPendingCallEvents(user.id, socket);
+
+  socket.on('profile:refresh', async () => {
+    try {
+      const current = await getProfileById(user.id);
+      if (!current) return;
+      user.username = current.username;
+      user.display_name = current.display_name;
+      socket.data.user = user;
+      socketUsers.set(socket.id, user);
+      broadcastPresence();
+    } catch { /* Profile syncing must not interrupt chat traffic. */ }
+  });
 
   socket.on('chat:open', async (data = {}) => {
     try {

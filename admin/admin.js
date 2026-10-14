@@ -10,9 +10,8 @@
   };
   const saveSession = (data) => {
     authSession = {
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at: Number(data.expires_at || (Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600))),
+      admin_token: data.token,
+      expires_at: Number(data.expires_at || (Math.floor(Date.now() / 1000) + 8 * 60 * 60)),
       user: data.user
     };
     sessionStorage.setItem('fb-chat-admin-session', JSON.stringify(authSession));
@@ -34,35 +33,28 @@
         /^\/storage\/v1\/object\/public\/fbchat-profiles\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(url.pathname) ? value : '';
     } catch { return ''; }
   }
-  async function refreshSession() {
-    if (!authSession?.refresh_token) throw new Error('Please sign in again.');
-    const response = await fetch(config.supabaseUrl + '/auth/v1/token?grant_type=refresh_token', {
-      credentials:'omit',
-      method:'POST',
-      headers:{'Content-Type':'application/json',apikey:config.supabaseAnonKey},
-      body:JSON.stringify({refresh_token:authSession.refresh_token})
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.access_token) throw new Error('Session expired. Sign in again.');
-    saveSession(data);
-  }
-  async function api(path, options = {}, canRetry = true) {
-    if (!authSession?.access_token) throw new Error('Sign in to continue.');
-    if (authSession.expires_at < Math.floor(Date.now()/1000) + 20 && authSession.refresh_token) {
-      await refreshSession();
+  async function api(path, options = {}) {
+    if (!authSession?.admin_token) throw new Error('Sign in to continue.');
+    if (authSession.expires_at <= Math.floor(Date.now() / 1000)) {
+      authSession = null;
+      sessionStorage.removeItem('fb-chat-admin-session');
+      showLogin('Admin session expired. Please sign in again.');
+      throw new Error('Admin session expired. Please sign in again.');
     }
     const response = await fetch(path, {
       credentials:'omit',
       cache:'no-store',
       method:options.method || 'GET',
-      headers:Object.assign({'Content-Type':'application/json',Authorization:'Bearer '+authSession.access_token},options.headers||{}),
+      headers:Object.assign({'Content-Type':'application/json',Authorization:'Bearer '+authSession.admin_token},options.headers||{}),
       body:options.body
     });
-    if (response.status === 401 && canRetry && authSession.refresh_token) {
-      await refreshSession();
-      return api(path, options, false);
-    }
     const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      authSession = null;
+      sessionStorage.removeItem('fb-chat-admin-session');
+      showLogin(data.message || 'Admin session expired. Please sign in again.');
+      throw new Error(data.message || 'Admin session expired. Please sign in again.');
+    }
     if (!response.ok) throw new Error(data.message || (response.status + ' request failed'));
     return data;
   }
@@ -88,14 +80,15 @@
     if (!config.adminConfigured) return loginError('Admin access is not enabled yet. The owner must add ADMIN_EMAILS to the server environment.');
     $('#loginSubmit').disabled = true; $('#loginSubmit').textContent = 'Signing in…'; loginError('');
     try {
-      const response = await fetch(config.supabaseUrl + '/auth/v1/token?grant_type=password', {
+      const response = await fetch('/api/admin/login', {
         credentials:'omit',
+        cache:'no-store',
         method:'POST',
-        headers:{'Content-Type':'application/json',apikey:config.supabaseAnonKey},
+        headers:{'Content-Type':'application/json'},
         body:JSON.stringify({email:$('#email').value.trim(),password:$('#password').value})
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.access_token) throw new Error(data.msg || data.message || data.error_description || 'Sign in failed.');
+      if (!response.ok || !data.token) throw new Error(data.message || 'Sign in failed.');
       saveSession(data);
       $('#password').value = '';
       showDashboard();
@@ -108,15 +101,10 @@
     }
   }
   async function logout() {
-    try {
-      if (authSession?.access_token && config?.supabaseUrl) {
-        await fetch(config.supabaseUrl + '/auth/v1/logout', {
-          credentials:'omit',
-          method:'POST',headers:{apikey:config.supabaseAnonKey,Authorization:'Bearer '+authSession.access_token}
-        });
-      }
-    } catch {}
-    authSession = null; sessionStorage.removeItem('fb-chat-admin-session'); showLogin('Signed out.');
+    // Admin session tokens are short-lived and held only in this tab's session storage.
+    authSession = null;
+    sessionStorage.removeItem('fb-chat-admin-session');
+    showLogin('Signed out.');
   }
   function renderStats(counts = {}) {
     const data = [
@@ -228,7 +216,7 @@
       return;
     }
     authSession = readSession();
-    if(authSession?.access_token && config.adminConfigured) {
+    if(authSession?.admin_token && config.adminConfigured) {
       showDashboard();
       try { await loadPanel('overview'); }
       catch(error) { showLogin(error.message || 'Please sign in again.'); }

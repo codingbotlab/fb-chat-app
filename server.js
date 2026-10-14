@@ -298,7 +298,7 @@ function verifyAdminSession(token) {
   } catch { return null; }
 }
 function requireAdminSession(req, res, next) {
-  const match = String(req.headers.authorization || '').match(/^Bearer\\s+(.+)$/i);
+  const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
   const user = verifyAdminSession(match?.[1] || '');
   if (!user) return res.status(401).json({ error: 'ADMIN_SESSION_REQUIRED', message: 'Admin session expired. Please sign in again.' });
   req.authUser = user;

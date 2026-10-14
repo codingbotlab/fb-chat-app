@@ -339,3 +339,17 @@ test('remote video is muted separately from remote call audio to avoid Android a
   assert.match(js, /audio\.srcObject = remoteMediaStream/);
   assert.match(html, /id="remoteCallVideo" autoplay playsinline muted/);
 });
+
+
+test('front camera selfie preview is mirrored and rear camera preview is not', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
+  assert.match(js, /classList\.toggle\('front-camera', isFrontCamera\)/);
+  assert.match(js, /classList\.add\('front-camera'\)/);
+  assert.match(js, /classList\.remove\('front-camera'\)/);
+  assert.match(css, /#localCallVideo\.front-camera\{transform:scaleX\(-1\)\}/);
+  assert.doesNotMatch(css, /#remoteCallVideo\.front-camera/);
+});

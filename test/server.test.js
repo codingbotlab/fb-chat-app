@@ -262,7 +262,8 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
 test('Android WebRTC manifest includes audio routing permission and bumped release version', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const android = path.join(__dirname, '..', 'android');
+  const root = path.join(__dirname, '..');
+  const android = path.join(root, 'android');
   const manifest = fs.readFileSync(path.join(android, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
   const gradle = fs.readFileSync(path.join(android, 'app', 'build.gradle'), 'utf8');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);

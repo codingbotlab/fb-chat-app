@@ -615,6 +615,7 @@
     if (window.FBChatNative) {
       void syncNativePushToken();
       try { window.FBChatNative.refreshToken(); } catch {}
+      try { window.FBChatNative.checkForAppUpdate(); } catch {}
     }
     handleQueuedNotificationChat();
     void showCallPermissionPrompt();
@@ -1207,7 +1208,15 @@
           else await enablePushNotifications();
         }
       },
-      ...(nativeApp ? [{ label: 'Open Android app permissions', action: () => {
+      ...(nativeApp ? [{
+        label: 'Check for app updates',
+        action: () => {
+          $('#genericModal').hidden = true;
+          nativeUpdateCheckManual = true;
+          try { window.FBChatNative.checkForAppUpdate(); }
+          catch { nativeUpdateCheckManual = false; toast('Could not check for updates. Connect to the internet and retry.'); }
+        }
+      }, { label: 'Open Android app permissions', action: () => {
         try { window.FBChatNative.openAppSettings(); }
         catch { toast('Open Android Settings → Apps → FB Chat → Permissions.', 5000); }
       }}] : []),
@@ -1350,6 +1359,33 @@
       }
     });
   }
+  let nativeUpdateCheckManual = false;
+  window.fbchatOnNativeUpdateCheck = (result) => {
+    if (result?.error) {
+      if (nativeUpdateCheckManual) toast('Could not check for app updates. Connect to the internet and try again.', 4500);
+      nativeUpdateCheckManual = false;
+      return;
+    }
+    if (!result?.updateAvailable) {
+      if (nativeUpdateCheckManual) toast('FB Chat is up to date' + (result?.currentVersion ? ' (v' + result.currentVersion + ')' : '') + '.', 3500);
+      nativeUpdateCheckManual = false;
+      return;
+    }
+    if (!nativeUpdateCheckManual && $('#genericModal') && !$('#genericModal').hidden) {
+      toast('FB Chat v' + result.latestVersion + ' is available. Open Settings → Check for app updates.', 5500);
+      return;
+    }
+    nativeUpdateCheckManual = false;
+    infoModal('Update available', 'FB Chat v' + result.latestVersion + ' is ready to install. Download it now; Android will ask you to confirm the installation. Your account messages stay on the server, but always keep your sign-in password handy.',
+      [
+        { label: 'Download & install', className: 'primary', action: () => {
+          $('#genericModal').hidden = true;
+          try { window.FBChatNative.installAppUpdate(result.downloadUrl); }
+          catch { toast('Could not start the updater. Please retry from Settings.', 4500); }
+        }},
+        { label: 'Later', action: () => { $('#genericModal').hidden = true; } }
+      ]);
+  };
   window.fbchatOnFcmToken = acceptNativeFcmToken;
   window.fbchatOpenNativeChat = (username) => { void openChatByUsername(username); };
   initialize().catch((error) => { console.error('FB Chat initialization failed:', error); showAuth(error.message || 'Could not initialize. Reload the page.', true); });

@@ -937,34 +937,30 @@
     $('#profileButton').addEventListener('click', profileDialog);
     $('#settingsButton').addEventListener('click', settingsDialog);
     $('#mobileSettingsButton').addEventListener('click', settingsDialog);
-    const bottomNavItems = $$('[data-bottom-nav]');
-    bottomNavItems.forEach((button) => button.addEventListener('click', () => {
+    const bottomNavItems = $('[data-bottom-nav]');
+    const showMainSection = (section) => {
       bottomNavItems.forEach((item) => {
-        const active = item === button;
+        const active = item.dataset.bottomNav === section;
         item.classList.toggle('active', active);
         if (active) item.setAttribute('aria-current', 'page');
         else item.removeAttribute('aria-current');
       });
-      if (button.dataset.bottomNav === 'chats') {
+      $('[data-rail]').forEach((item) => item.classList.toggle('active', item.dataset.rail === section));
+      if (section === 'chats') {
         $('#app').classList.remove('chat-open');
         return;
       }
-      infoModal(button.dataset.bottomNav === 'status' ? 'Status updates' : 'Communities',
-        button.dataset.bottomNav === 'status' ? 'Encrypted status sharing is not implemented yet.'
-          : 'Community chats are not implemented yet.');
-    }));
-    $('#bottomSettingsButton').addEventListener('click', () => {
-      bottomNavItems.forEach((item) => { item.classList.remove('active'); item.removeAttribute('aria-current'); });
-      settingsDialog();
-    });
-    $$('[data-rail]').forEach((button) => button.addEventListener('click', () => {
-      $$('[data-rail]').forEach((item) => item.classList.toggle('active', item === button));
-      if (button.dataset.rail === 'chats') return;
-      infoModal(button.dataset.rail === 'status' ? 'Status updates' : 'Communities',
-        button.dataset.rail === 'status' ? 'Encrypted status sharing is not implemented yet.'
-          : 'Group/community conversations and membership controls are not included in this version.',
-        [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
-    }));
+      $('#app').classList.remove('chat-open');
+      const screens = {
+        updates: ['Updates', 'Status updates and channels will appear here. Status sharing is not available yet.'],
+        communities: ['Communities', 'Your community announcements and group conversations will appear here. Communities are not available yet.'],
+        calls: ['Calls', 'Voice and video calling is not available yet. Your future calls will appear here.']
+      };
+      const screen = screens[section];
+      if (screen) infoModal(screen[0], screen[1], [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
+    };
+    bottomNavItems.forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.bottomNav)));
+    $('[data-rail]').forEach((button) => button.addEventListener('click', () => showMainSection(button.dataset.rail)));
   }
   async function initialize() {
     bindUi(); $('#authOverlay').classList.add('show'); setAuthMode('login');

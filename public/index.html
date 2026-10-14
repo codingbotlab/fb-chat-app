@@ -93,6 +93,8 @@
           <button type="button" class="emoji-choice" data-emoji="💯" aria-label="100">💯</button>
         </div>
         <form class="compose" id="composeForm">
+          <input id="mediaInput" type="file" accept="image/*,video/*,audio/*" hidden>
+          <button type="button" class="iconbtn compose-tool" id="attachMediaButton" title="Attach image, video or audio (24 KB max)" aria-label="Attach media"><i class="bi bi-paperclip" aria-hidden="true"></i></button>
           <button type="button" class="iconbtn compose-tool" id="emojiBtn" title="Insert emoji" aria-label="Insert emoji"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.3 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg></button>
           <div class="messagebox"><textarea id="messageInput" rows="1" maxlength="4000" placeholder="Type a message" autocomplete="off" aria-label="Message text"></textarea></div>
           <button class="sendbtn" id="sendBtn" type="submit" title="Send encrypted message" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="m3 20 18-8L3 4l2 7 9 1-9 1Z"/></svg></button>

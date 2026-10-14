@@ -919,9 +919,21 @@
       root.appendChild(empty);
       return;
     }
+    const query = norm($('#contactsSearch')?.value);
     const sorted = contactEntries.map((contact, index) => ({ contact, index }))
+      .filter(({ contact }) => !query || norm([
+        contact.name, ...(contact.phones || []), ...(contact.emails || []),
+        contact.profile?.display_name, contact.profile?.username
+      ].join(' ')).includes(query))
       .sort((a, b) => Number(Boolean(b.contact.profile)) - Number(Boolean(a.contact.profile)) ||
         a.contact.name.localeCompare(b.contact.name));
+    if (query && !sorted.length) {
+      const empty = document.createElement('div');
+      empty.className = 'contacts-empty';
+      const heading = document.createElement('strong'); heading.textContent = 'No matching contacts';
+      const detail = document.createElement('p'); detail.textContent = 'Try another name, phone number or email.';
+      empty.append(heading, detail); root.appendChild(empty); return;
+    }
     for (const { contact, index } of sorted) {
       const row = document.createElement('article');
       row.className = 'contact-row';

@@ -266,3 +266,17 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 @media(max-width:720px){.call-overlay{padding:8px}.call-card{padding:11px}.call-video-stage{min-height:240px;aspect-ratio:3/4}.call-video-stage #localCallVideo{width:32%;height:22%}}
 
 .shared-media{display:block;max-width:min(100%,360px);max-height:320px;border-radius:8px;margin:4px 0;object-fit:contain}.media-filename{font-size:10px;color:#9bb8bd;margin:4px 0}
+
+/* Permission switches shown in app Settings. */
+.permission-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex:1 0 100%;width:100%;padding:12px 13px;border:1px solid #2c454d;border-radius:10px;background:#101f25;cursor:pointer}
+.permission-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
+.permission-copy strong{font-size:12px;color:#e4eff1;font-weight:650}
+.permission-copy small{font-size:10px;line-height:1.5;color:#8fa9b0}
+.permission-copy .permission-status{color:#9de0c7}
+.permission-row input[type=checkbox]{appearance:none;-webkit-appearance:none;position:relative;flex:0 0 43px;width:43px;height:25px;border:1px solid #47616a;border-radius:999px;background:#263840;cursor:pointer;transition:background .18s,border-color .18s}
+.permission-row input[type=checkbox]::after{content:"";position:absolute;left:3px;top:3px;width:17px;height:17px;border-radius:50%;background:#d1dfe2;transition:transform .18s}
+.permission-row input[type=checkbox]:checked{background:#008e71;border-color:#00a884}
+.permission-row input[type=checkbox]:checked::after{transform:translateX(18px);background:#fff}
+.permission-row input[type=checkbox]:disabled{opacity:.6;cursor:wait}
+#genericFoot{flex-wrap:wrap;gap:8px}
+#genericFoot>.permission-row{margin:0}

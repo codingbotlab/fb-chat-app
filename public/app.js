@@ -131,6 +131,22 @@
     nativeFcmToken = token;
     void syncNativePushToken();
   }
+  // WebView can receive its FCM token before authentication finishes.
+  // Retry registration when the app returns to the foreground or network comes back.
+  let nativePushRetryQueued = false;
+  function retryNativePushRegistration() {
+    if (nativePushRetryQueued) return;
+    nativePushRetryQueued = true;
+    Promise.resolve().then(() => {
+      nativePushRetryQueued = false;
+      void syncNativePushToken();
+    });
+  }
+  window.addEventListener('focus', retryNativePushRegistration);
+  window.addEventListener('online', retryNativePushRegistration);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') retryNativePushRegistration();
+  });
   async function unregisterNativePushToken() {
     if (!window.FBChatNative || !me || !session?.access_token || !nativeFcmToken) return;
     try {

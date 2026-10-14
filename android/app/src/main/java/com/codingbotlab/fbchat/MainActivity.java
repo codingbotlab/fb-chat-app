@@ -19,6 +19,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.SafeBrowsingResponse;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -32,6 +33,8 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 public final class MainActivity extends Activity {
@@ -40,10 +43,13 @@ public final class MainActivity extends Activity {
     private static final String CHANNEL_ID = "fbchat_messages";
     private static final String PREFS = "fbchat_native_push";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 7102;
+    private static final int CALL_PERMISSION_REQUEST = 7103;
     private static final int CHROME = Color.rgb(11, 20, 26);
     private static final Pattern USERNAME = Pattern.compile("^[a-z0-9_.]{3,24}$");
     private static volatile boolean appVisible = false;
     private WebView webView;
+    private PermissionRequest pendingWebPermissionRequest;
+    private String[] pendingWebPermissionResources = new String[0];
 
     public static boolean isAppVisible() {
         return appVisible;
@@ -89,7 +95,20 @@ public final class MainActivity extends Activity {
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, false);
 
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> handleWebPermissionRequest(request));
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (pendingWebPermissionRequest == request) {
+                    pendingWebPermissionRequest = null;
+                    pendingWebPermissionResources = new String[0];
+                }
+            }
+        });
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -123,6 +142,82 @@ public final class MainActivity extends Activity {
         String username = notificationUsername(getIntent());
         webView.loadUrl(username == null ? APP_URL : APP_URL + "/?openChat=" + Uri.encode(username));
         refreshFcmToken();
+    }
+
+
+    private void handleWebPermissionRequest(PermissionRequest request) {
+        Uri origin = request.getOrigin();
+        if (origin == null || !"https".equalsIgnoreCase(origin.getScheme())
+                || !APP_HOST.equalsIgnoreCase(origin.getHost())) {
+            request.deny();
+            return;
+        }
+        List<String> mediaResources = new ArrayList<>();
+        List<String> androidPermissions = new ArrayList<>();
+        for (String resource : request.getResources()) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                mediaResources.add(resource);
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                    androidPermissions.add(Manifest.permission.RECORD_AUDIO);
+            } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                mediaResources.add(resource);
+                if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+                    androidPermissions.add(Manifest.permission.CAMERA);
+            }
+        }
+        if (mediaResources.isEmpty()) {
+            request.deny();
+            return;
+        }
+        if (pendingWebPermissionRequest != null && pendingWebPermissionRequest != request) {
+            try { pendingWebPermissionRequest.deny(); } catch (RuntimeException ignored) {}
+        }
+        pendingWebPermissionRequest = request;
+        pendingWebPermissionResources = mediaResources.toArray(new String[0]);
+        if (androidPermissions.isEmpty()) {
+            completePendingWebPermissionRequest();
+            return;
+        }
+        List<String> unique = new ArrayList<>();
+        for (String permission : androidPermissions) {
+            if (!unique.contains(permission)) unique.add(permission);
+        }
+        requestPermissions(unique.toArray(new String[0]), CALL_PERMISSION_REQUEST);
+    }
+
+    private void completePendingWebPermissionRequest() {
+        PermissionRequest request = pendingWebPermissionRequest;
+        String[] resources = pendingWebPermissionResources;
+        pendingWebPermissionRequest = null;
+        pendingWebPermissionResources = new String[0];
+        if (request == null) return;
+        List<String> granted = new ArrayList<>();
+        for (String resource : resources) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)
+                    && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                granted.add(resource);
+            } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)
+                    && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                granted.add(resource);
+            }
+        }
+        try {
+            if (granted.isEmpty()) request.deny();
+            else request.grant(granted.toArray(new String[0]));
+        } catch (RuntimeException error) {
+            android.util.Log.w("FBChatMedia", "Web media permission request expired", error);
+        }
+    }
+
+    private boolean hasAndroidPermission(String permission) {
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void openAppPermissionSettings() {
+        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName()));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
     }
 
     private void createNotificationChannel() {
@@ -230,6 +325,12 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CALL_PERMISSION_REQUEST) completePendingWebPermissionRequest();
+    }
+
+    @Override
     protected void onSaveInstanceState(Bundle outState) {
         if (webView != null) webView.saveState(outState);
         super.onSaveInstanceState(outState);
@@ -274,6 +375,28 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 MainActivity.this.requestNotificationPermission();
                 refreshFcmToken();
+            });
+        }
+
+        @JavascriptInterface
+        public String getCallPermissionStatus() {
+            JSONObject status = new JSONObject();
+            try {
+                status.put("microphone", hasAndroidPermission(Manifest.permission.RECORD_AUDIO));
+                status.put("camera", hasAndroidPermission(Manifest.permission.CAMERA));
+                return status.toString();
+            } catch (org.json.JSONException error) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
+        public void openAppSettings() {
+            runOnUiThread(() -> {
+                try { openAppPermissionSettings(); }
+                catch (ActivityNotFoundException ignored) {
+                    Toast.makeText(MainActivity.this, "Open Android Settings → Apps → FB Chat → Permissions.", Toast.LENGTH_LONG).show();
+                }
             });
         }
     }

@@ -169,6 +169,46 @@ async function fetchAuthUsers(page = 1, perPage = 1000) {
   if (!response.ok) throw appError(503, 'AUTH_ADMIN_UNAVAILABLE', 'Could not read account directory from authentication storage.');
   return Array.isArray(body.users) ? body.users : [];
 }
+function normalizeContactPhone(value) {
+  let digits = String(value || '').replace(/\\D/g, '');
+  if (digits.startsWith('0091') && digits.length === 14) digits = digits.slice(4);
+  else if (digits.startsWith('91') && digits.length === 12) digits = digits.slice(2);
+  else if (digits.startsWith('0') && digits.length === 11) digits = digits.slice(1);
+  return digits.length >= 7 && digits.length <= 15 ? digits : '';
+}
+function findContactAccountMatches(contacts, authUsers) {
+  const byEmail = new Map();
+  const byPhone = new Map();
+  for (const account of authUsers || []) {
+    if (!account?.id || !validUuid(account.id)) continue;
+    const email = typeof account.email === 'string' ? account.email.trim().toLowerCase() : '';
+    if (email) byEmail.set(email, account);
+    const phone = normalizeContactPhone(account.phone);
+    if (phone && !byPhone.has(phone)) byPhone.set(phone, account);
+  }
+  const matches = [];
+  (Array.isArray(contacts) ? contacts : []).slice(0, 400).forEach((contact, index) => {
+    if (!contact || typeof contact !== 'object') return;
+    let account = null;
+    const emails = Array.isArray(contact.emails) ? contact.emails.slice(0, 5) : [];
+    for (const value of emails) {
+      if (typeof value !== 'string' || value.length > 254) continue;
+      account = byEmail.get(value.trim().toLowerCase()) || null;
+      if (account) break;
+    }
+    if (!account) {
+      const phones = Array.isArray(contact.phones) ? contact.phones.slice(0, 5) : [];
+      for (const value of phones) {
+        if (typeof value !== 'string' || value.length > 40) continue;
+        const phone = normalizeContactPhone(value);
+        account = phone ? byPhone.get(phone) || null : null;
+        if (account) break;
+      }
+    }
+    if (account) matches.push({ index, accountId: account.id });
+  });
+  return matches;
+}
 async function getAuthUserById(id) {
   if (!validUuid(id)) return null;
   const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(id), {
@@ -1115,6 +1155,46 @@ app.put('/api/me/crypto', requireAuth, async (req, res, next) => {
     res.json({ profile: publicProfile(rows?.[0] || await getProfileById(req.authUser.id)) });
   } catch (error) { next(error); }
 });
+app.post('/api/contacts/match', requireAuth, async (req, res, next) => {
+  try {
+    const contacts = req.body?.contacts;
+    if (!Array.isArray(contacts) || contacts.length > 400) {
+      return res.status(400).json({ error: 'INVALID_CONTACTS', message: 'Import up to 400 contacts at a time.' });
+    }
+    // Contact values are processed in memory only. We do not log or store the address book.
+    const authUsers = await fetchAuthUsers(1, 1000);
+    const candidates = findContactAccountMatches(contacts, authUsers)
+      .filter((item) => item.accountId !== req.authUser.id)
+      .slice(0, 150);
+    const ids = [...new Set(candidates.map((item) => item.accountId))];
+    if (!ids.length) return res.json({ matches: [] });
+    const rows = await db('profiles',
+      'select=id,username,display_name,public_key,created_at&id=in.(' + ids.join(',') + ')');
+    const profilesById = new Map((rows || []).map((row) => [row.id, row]));
+    const accountsById = new Map(authUsers.filter((item) => ids.includes(item.id)).map((item) => [item.id, item]));
+    const metadataById = new Map();
+    await Promise.all(ids.map(async (id) => {
+      const account = accountsById.get(id);
+      if (!account) return;
+      try { metadataById.set(id, await ensureStoredAvatarMetadata(account)); }
+      catch { metadataById.set(id, account.user_metadata || {}); }
+    }));
+    const matches = [];
+    for (const item of candidates) {
+      const row = profilesById.get(item.accountId);
+      if (!row) continue;
+      const account = accountsById.get(item.accountId);
+      const metadata = metadataById.get(item.accountId) || account?.user_metadata || {};
+      matches.push({
+        index: item.index,
+        profile: Object.assign({}, publicProfile(row, metadata), {
+          encryptionReady: Boolean(row.public_key)
+        })
+      });
+    }
+    res.json({ matches });
+  } catch (error) { next(error); }
+});
 app.get('/api/users/:username', requireAuth, async (req, res, next) => {
   try {
     const person = await getProfileByUsername(req.params.username);
@@ -1424,4 +1504,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch, findLegacyAvatarDataUrl, rasterizeLegacyAvatar };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch, findLegacyAvatarDataUrl, rasterizeLegacyAvatar, normalizeContactPhone, findContactAccountMatches };

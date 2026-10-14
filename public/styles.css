@@ -768,3 +768,18 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   }
 }
 .user-profile-page{transform:translateX(0)}
+
+
+/* Secure QR device pairing dialog */
+.qr-login-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.qr-login-actions .install-app-btn{flex:1;min-width:160px}
+.qr-pair-modal{position:fixed;inset:0;z-index:120;display:grid;place-items:center;padding:18px;background:rgba(0,0,0,.76);backdrop-filter:blur(8px)}
+.qr-pair-modal[hidden]{display:none}
+.qr-pair-card{position:relative;width:min(100%,420px);padding:26px 22px;border:1px solid #2b4148;border-radius:22px;background:#111b21;color:#e9edef;text-align:center;box-shadow:0 22px 80px rgba(0,0,0,.45)}
+.qr-pair-card h2{margin:0 28px 8px;font-size:23px;font-weight:700}
+.qr-pair-card p{color:#aebac1;font-size:14px;line-height:1.5}
+#qrPairCanvas{display:block;width:min(280px,100%);height:auto;margin:18px auto;border-radius:10px;background:white;padding:8px}
+#qrPairVideo{display:block;width:100%;max-height:340px;object-fit:cover;border-radius:12px;margin:14px auto}
+.qr-pair-close{position:absolute;right:12px;top:8px;border:0;background:transparent;color:#d7e0e3;font-size:30px}
+#qrPairStatus{min-height:44px;margin:10px 0}
+@media(max-width:600px){.qr-pair-card{padding:24px 16px}.qr-login-actions{flex-direction:column}}

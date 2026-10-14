@@ -213,7 +213,7 @@
     try {
       const response = await fetch('/api/admin/config',{cache:'no-store',credentials:'omit'});
       config = await response.json();
-      if(!response.ok) throw new Error('This console is only available on admin-chat.fashionbazz.in.');
+      if(!response.ok) throw new Error('Could not load admin setup. Reload this page and retry.');
       if(!config.configured) $('#configNotice').textContent='Chat authentication/database is not configured.';
       else if(!config.adminConfigured) $('#configNotice').textContent='Admin login is locked until ADMIN_EMAILS is set in the Render environment.';
       else $('#configNotice').hidden=true;

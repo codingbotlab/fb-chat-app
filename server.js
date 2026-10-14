@@ -1267,7 +1267,15 @@ app.get('/api/chats/:username/messages', requireAuth, async (req, res, next) => 
       mine + ',recipient_id.eq.' + peer.id + '),and(sender_id.eq.' + peer.id + ',recipient_id.eq.' + mine +
       '))&order=created_at.asc&limit=500');
     const authPeer = await getAuthUserById(peer.id);
-    res.json({ peer: publicProfile(peer, authPeer?.user_metadata || {}), messages: rows || [] });
+    let peerMetadata = authPeer?.user_metadata || {};
+    if (authPeer) {
+      try { peerMetadata = await ensureStoredAvatarMetadata(authPeer); }
+      catch {
+        // A legacy avatar migration must not block encrypted message history.
+        peerMetadata = authPeer.user_metadata || {};
+      }
+    }
+    res.json({ peer: publicProfile(peer, peerMetadata), messages: rows || [] });
   } catch (error) { next(error); }
 });
 

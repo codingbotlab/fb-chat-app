@@ -325,3 +325,17 @@ test('Android call tones, separate call notification channel and queued WebRTC e
   assert.match(server, /type: payload\.type === 'incoming_call'/);
   assert.match(server, /call_kind: payload\.call_kind/);
 });
+
+
+test('remote video is muted separately from remote call audio to avoid Android autoplay blocking', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  assert.match(js, /let peerConnection = null, localStream = null, remoteMediaStream = null, remoteVideoStream = null/);
+  assert.match(js, /video\.muted = true/);
+  assert.match(js, /video\.srcObject = remoteVideoStream/);
+  assert.match(js, /audio\.srcObject = remoteMediaStream/);
+  assert.match(html, /id="remoteCallVideo" autoplay playsinline muted/);
+});

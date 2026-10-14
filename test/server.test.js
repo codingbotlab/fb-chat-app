@@ -168,7 +168,7 @@ test('WhatsApp-style screen includes all required UI targets and no canned sampl
   assert.match(js, /async function saveProfile\(event\)/);
   assert.match(js, /async function resizeProfilePhoto\(file\)/);
   assert.match(js, /profile:refresh/);
-  assert.ok(html.includes('styles.css?v=wa-compact-1'));
+  assert.ok(html.includes('styles.css?v=wa-compact-2'));
   assert.doesNotMatch(html, /Administrator sign in|admin-chat\.fashionbazz\.in/i);
 });
 
@@ -181,7 +181,7 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
 
-  assert.ok(html.includes('styles.css?v=wa-compact-1'));
+  assert.ok(html.includes('styles.css?v=wa-compact-2'));
   assert.match(html, /data-bottom-nav="chats"/);
   assert.match(html, /data-bottom-nav="calls"/);
   assert.match(html, /data-bottom-nav="profile"/);
@@ -194,8 +194,9 @@ test('main chat navigation only exposes working sections and responsive WhatsApp
   assert.match(css, /\.chatitem\{gap:10px;min-height:67px;padding:8px 8px/);
   assert.match(css, /\.messagebox\{/);
   assert.match(css, /@media\(max-width:720px\)/);
-  assert.match(sw, /fb-chat-shell-v13/);
-  assert.ok(sw.includes('/styles.css?v=wa-compact-1'));
+  assert.ok(css.includes('.app.chat-open{padding-bottom:0}'));
+  assert.match(sw, /fb-chat-shell-v14/);
+  assert.ok(sw.includes('/styles.css?v=wa-compact-2'));
 });
 
 test('normal user sign-in cleans old oversized auth metadata before the browser receives its JWT', () => {
@@ -328,7 +329,7 @@ test('WhatsApp-style actions, sound settings and notification enrollment are pre
   assert.match(sw, /self\.addEventListener\('push'/);
   assert.match(sw, /showNotification/);
   assert.match(sw, /notificationclick/);
-  assert.match(sw, /fb-chat-shell-v13/);
+  assert.match(sw, /fb-chat-shell-v14/);
   assert.match(js, /showCallPermissionPrompt/);
   assert.match(js, /Microphone for voice calls/);
   assert.match(js, /Camera for video calls/);
@@ -409,7 +410,7 @@ test('single-chat layout and call-media recovery handle Android WebView', () => 
   assert.match(js, /callMediaErrorMessage\(error\)/);
   assert.match(css, /\.app\.chat-open \.mobile-bottom-nav\{display:none\}/);
   assert.match(css, /\.app\.chat-open \.conversation\{padding-bottom:0\}/);
-  assert.match(sw, /fb-chat-shell-v13/);
+  assert.match(sw, /fb-chat-shell-v14/);
 });
 
 
@@ -465,7 +466,7 @@ test('WhatsApp-style call UI supports remote track fallback, queued ICE, audio c
   assert.match(html, /id="flipCameraButton"/);
   assert.match(html, /id="callFloatingButton"/);
   assert.match(css, /\.call-video-stage #remoteCallVideo\[hidden\]\{display:none\}/);
-  assert.match(sw, /fb-chat-shell-v13/);
+  assert.match(sw, /fb-chat-shell-v14/);
 });
 
 

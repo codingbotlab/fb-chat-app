@@ -237,8 +237,35 @@ async function storeProfileAvatar(userId, dataUrl) {
   }
   return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.' + extension;
 }
-async function updateAuthUserMetadata(user, metadata, replace = false) {
-  const nextMetadata = replace ? metadata : Object.assign({}, user?.user_metadata || {}, metadata);
+function metadataCleanupPatch(existing = {}, compact = {}) {
+  const patch = {};
+  for (const key of Object.keys(existing || {})) patch[key] = null;
+  return Object.assign(patch, compact);
+}
+function compactAppMetadata(metadata = {}) {
+  // Preserve standard Supabase provider/role claims, but never large arbitrary blobs.
+  const compact = {};
+  if (typeof metadata.provider === 'string' && /^[a-z0-9_-]{1,64}$/i.test(metadata.provider)) {
+    compact.provider = metadata.provider;
+  }
+  if (Array.isArray(metadata.providers)) {
+    const providers = [...new Set(metadata.providers.filter((value) =>
+      typeof value === 'string' && /^[a-z0-9_-]{1,64}$/i.test(value)))].slice(0, 10);
+    if (providers.length) compact.providers = providers;
+  }
+  if (typeof metadata.role === 'string' && /^[a-z0-9:_-]{1,64}$/i.test(metadata.role)) compact.role = metadata.role;
+  if (typeof metadata.is_sso_user === 'boolean') compact.is_sso_user = metadata.is_sso_user;
+  return compact;
+}
+async function updateAuthUserMetadata(user, metadata, replace = false, appMetadata = null) {
+  const existingUserMetadata = user?.user_metadata || {};
+  const nextMetadata = replace
+    ? metadataCleanupPatch(existingUserMetadata, metadata)
+    : Object.assign({}, existingUserMetadata, metadata);
+  const updatePayload = { user_metadata: nextMetadata };
+  if (appMetadata !== null) {
+    updatePayload.app_metadata = metadataCleanupPatch(user?.app_metadata || {}, appMetadata);
+  }
   const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(user.id), {
     method: 'PUT',
     headers: {
@@ -247,7 +274,7 @@ async function updateAuthUserMetadata(user, metadata, replace = false) {
       'Content-Type': 'application/json',
       Accept: 'application/json'
     },
-    body: JSON.stringify({ user_metadata: nextMetadata }),
+    body: JSON.stringify(updatePayload),
     signal: AbortSignal.timeout(10_000)
   });
   const result = await response.json().catch(() => ({}));
@@ -565,33 +592,50 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     let sessionResult = result;
-    const metadata = result.user.user_metadata || {};
-    const metadataBytes = Buffer.byteLength(JSON.stringify(metadata), 'utf8');
-    const avatar = metadata.avatar_url;
-    const unsafeAvatar = avatar != null && avatar !== '' && !validStoredAvatarUrl(avatar);
-    if (metadataBytes > 3000 || unsafeAvatar) {
-      const compactMetadata = compactUserMetadata(metadata);
-      await updateAuthUserMetadata(result.user, compactMetadata, true);
+    function oversizedSession(value) {
+      const user = value?.user || {};
+      const userMetadata = user.user_metadata || {};
+      const appMetadata = user.app_metadata || {};
+      const userMetadataBytes = Buffer.byteLength(JSON.stringify(userMetadata), 'utf8');
+      const appMetadataBytes = Buffer.byteLength(JSON.stringify(appMetadata), 'utf8');
+      const avatar = userMetadata.avatar_url;
+      const unsafeAvatar = avatar != null && avatar !== '' && !validStoredAvatarUrl(avatar);
+      return userMetadataBytes > 3000 || appMetadataBytes > 3000 || unsafeAvatar ||
+        String(value?.access_token || '').length > 12_000;
+    }
 
-      // Supabase JWTs retain the old metadata until a token refresh. Refresh only
-      // after the oversized fields have been removed, so the browser never sends
-      // a giant Authorization header to the chat API.
+    // Some auth providers merge user_metadata rather than replacing it. Explicit
+    // null patches are required to remove old data-URI/SVG/provider keys completely.
+    // Retry once with fresh claims after cleaning both metadata namespaces.
+    for (let attempt = 0; attempt < 2 && oversizedSession(sessionResult); attempt += 1) {
+      const currentUser = sessionResult.user || result.user;
+      const userMetadata = currentUser.user_metadata || {};
+      const appMetadata = currentUser.app_metadata || {};
+      const userMetadataBytes = Buffer.byteLength(JSON.stringify(userMetadata), 'utf8');
+      const appMetadataBytes = Buffer.byteLength(JSON.stringify(appMetadata), 'utf8');
+      const avatar = userMetadata.avatar_url;
+      const unsafeAvatar = avatar != null && avatar !== '' && !validStoredAvatarUrl(avatar);
+      const compactMetadata = compactUserMetadata(userMetadata);
+      const compactApps = (appMetadataBytes > 3000 || String(sessionResult.access_token || '').length > 12_000)
+        ? compactAppMetadata(appMetadata) : null;
+
+      await updateAuthUserMetadata(currentUser, compactMetadata, true, compactApps);
       const refreshResponse = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
         method: 'POST',
         headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ refresh_token: result.refresh_token }),
+        body: JSON.stringify({ refresh_token: sessionResult.refresh_token }),
         signal: AbortSignal.timeout(12_000)
       });
       const refreshed = await refreshResponse.json().catch(() => ({}));
       if (!refreshResponse.ok || !refreshed.access_token || !refreshed.refresh_token) {
-        throw appError(503, 'SESSION_REFRESH_FAILED', 'Your profile data was cleaned. Please sign in once more.');
+        throw appError(503, 'SESSION_REFRESH_FAILED', 'Your saved profile data was cleaned. Please try signing in again.');
       }
       sessionResult = refreshed;
     }
 
-    // Guard against another oversized custom metadata field reintroducing 431s.
-    if (String(sessionResult.access_token).length > 12_000) {
-      throw appError(503, 'SESSION_TOKEN_TOO_LARGE', 'Your saved account details are too large for sign-in. Please contact app support.');
+    if (String(sessionResult.access_token || '').length > 12_000) {
+      throw appError(503, 'SESSION_TOKEN_TOO_LARGE',
+        'Your saved profile data was cleaned, but the sign-in token is still too large. Please try signing in again in a minute.');
     }
     userLoginAttempts.delete(String(req.ip || req.socket?.remoteAddress || 'unknown'));
     res.json(sessionResult);
@@ -1208,4 +1252,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch };

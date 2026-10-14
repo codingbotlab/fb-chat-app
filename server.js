@@ -3,6 +3,7 @@
 const path = require('node:path');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const sharp = require('sharp');
 const express = require('express');
 const { Server } = require('socket.io');
 const webpush = require('web-push');
@@ -355,16 +356,62 @@ function compactUserMetadata(metadata = {}) {
   if (validStoredAvatarUrl(metadata.avatar_url)) compact.avatar_url = metadata.avatar_url;
   return compact;
 }
+function findLegacyAvatarDataUrl(metadata = {}) {
+  for (const key of ['avatar_url', 'picture', 'profile_photo', 'profile_picture', 'avatar']) {
+    const value = metadata[key];
+    if (typeof value === 'string' &&
+      /^data:image\/(?:jpeg|png|webp|svg\+xml);base64,/i.test(value) &&
+      value.length <= 600_000) return value;
+  }
+  return null;
+}
+async function rasterizeLegacyAvatar(dataUrl) {
+  if (typeof dataUrl !== 'string' || dataUrl.length > 600_000) return null;
+  const match = dataUrl.match(/^data:image\/(jpeg|png|webp|svg\+xml);base64,([A-Za-z0-9+/=\r\n]+)$/i);
+  if (!match) return null;
+  let source;
+  try { source = Buffer.from(match[2].replace(/\s+/g, ''), 'base64'); } catch { return null; }
+  if (!source.length || source.length > 450_000) return null;
+
+  if (match[1].toLowerCase() === 'svg+xml') {
+    const svg = source.toString('utf8');
+    // SVG is rasterized server-side; reject active markup and external references.
+    if (!/<svg\b/i.test(svg) || /<!DOCTYPE|<!ENTITY|<script\b|<foreignObject\b|\son[a-z]+\s*=|(?:href|xlink:href)\s*=\s*['"]\s*(?:https?:|\/\/|file:|javascript:)|url\(\s*['"]?(?:https?:|\/\/|file:|javascript:)/i.test(svg)) {
+      return null;
+    }
+  }
+
+  for (const size of [320, 256, 200]) {
+    for (const quality of [76, 64, 52, 40]) {
+      try {
+        const bytes = await sharp(source, { limitInputPixels: 16_000_000, failOn: 'error' })
+          .rotate()
+          .resize(size, size, { fit: 'cover', withoutEnlargement: true, background: '#ffffff' })
+          .flatten({ background: '#ffffff' })
+          .jpeg({ quality, mozjpeg: true })
+          .toBuffer();
+        if (bytes.length <= 28_000) return 'data:image/jpeg;base64,' + bytes.toString('base64');
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 async function ensureStoredAvatarMetadata(authUser) {
   if (!authUser?.id || !validUuid(authUser.id)) return authUser?.user_metadata || {};
   const metadata = authUser.user_metadata || {};
   if (validStoredAvatarUrl(metadata.avatar_url)) return metadata;
 
-  // Older releases put a Base64 photo in auth metadata; newer releases store it
-  // in the public avatar bucket so it can safely be shown to other chat users.
+  // Migrate legacy Base64 photos (including SVG avatars) into compact public raster files.
   let avatarUrl = await findStoredProfileAvatar(authUser.id);
-  if (!avatarUrl && validAvatarDataUrl(metadata.avatar_url)) {
-    avatarUrl = await storeProfileAvatar(authUser.id, metadata.avatar_url);
+  if (!avatarUrl) {
+    const legacyAvatar = findLegacyAvatarDataUrl(metadata);
+    if (legacyAvatar) {
+      const raster = await rasterizeLegacyAvatar(legacyAvatar);
+      if (raster) avatarUrl = await storeProfileAvatar(authUser.id, raster);
+      else console.warn('[Profile avatar] A legacy photo could not be rasterized safely.');
+    }
   }
   if (!avatarUrl) return metadata;
 
@@ -671,8 +718,13 @@ app.post('/api/auth/login', async (req, res) => {
     const initialAvatar = initialMetadata.avatar_url;
     if (!validStoredAvatarUrl(initialAvatar)) {
       let recoveredAvatar = await findStoredProfileAvatar(sessionResult.user.id);
-      if (!recoveredAvatar && validAvatarDataUrl(initialAvatar)) {
-        recoveredAvatar = await storeProfileAvatar(sessionResult.user.id, initialAvatar);
+      if (!recoveredAvatar) {
+        const legacyAvatar = findLegacyAvatarDataUrl(initialMetadata);
+        if (legacyAvatar) {
+          const raster = await rasterizeLegacyAvatar(legacyAvatar);
+          if (raster) recoveredAvatar = await storeProfileAvatar(sessionResult.user.id, raster);
+          else console.warn('[Profile avatar] Could not recover the current user legacy image safely.');
+        }
       }
       if (recoveredAvatar) {
         sessionResult.user.user_metadata = Object.assign({}, initialMetadata, { avatar_url: recoveredAvatar });
@@ -1372,4 +1424,4 @@ if (require.main === module) {
     console.log('FB Chat listening on port ' + PORT + '; database configured: ' + configured);
   });
 }
-module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch };
+module.exports = { app, server, io, normalize, validUsername, validDisplayName, validEncryptedMessage, validPushSubscription, validFcmToken, authUserFromToken, validAvatarDataUrl, validStoredAvatarUrl, validBio, publicProfile, compactUserMetadata, compactAppMetadata, metadataCleanupPatch, findLegacyAvatarDataUrl, rasterizeLegacyAvatar };

@@ -279,4 +279,4 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .permission-row input[type=checkbox]:checked::after{transform:translateX(18px);background:#fff}
 .permission-row input[type=checkbox]:disabled{opacity:.6;cursor:wait}
 #genericFoot{flex-wrap:wrap;gap:8px}
-#genericFoot>.permission-row{margin:0}
+#genericFoot>.permission-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex:1 0 100%;width:100%;margin:0;color:#e4eff1;font-size:12px;font-weight:500}

@@ -37,7 +37,6 @@ const USERNAME_RE = /^[a-z0-9_.]{3,24}$/;
 const MAX_CIPHERTEXT_BYTES = 65_536;
 const FCM_PROJECT_ID = String(process.env.FCM_PROJECT_ID || '').trim();
 const FCM_SERVICE_ACCOUNT_JSON = String(process.env.FCM_SERVICE_ACCOUNT_JSON || '');
-const ADMIN_HOST = 'admin-chat.fashionbazz.in';
 const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || '')
   .split(',').map((value) => normalize(value)).filter(Boolean));
 let fcmMessaging = null;
@@ -139,13 +138,6 @@ function publicProfile(row, metadata = {}) {
     public_key: row.public_key || null, created_at: row.created_at,
     avatar_url: details.avatar_url, bio: details.bio
   };
-}
-function requestHost(req) {
-  return String(req.headers.host || '').split(':')[0].toLowerCase();
-}
-function requireAdminHost(req, res, next) {
-  if (requestHost(req) !== ADMIN_HOST) return res.status(404).json({ error: 'NOT_FOUND' });
-  next();
 }
 async function fetchAuthUsers(page = 1, perPage = 1000) {
   const response = await fetch(SUPABASE_URL + '/auth/v1/admin/users?page=' + page + '&per_page=' + perPage, {
@@ -409,34 +401,18 @@ app.get('/api/config', (_req, res) => res.json({
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
-app.get('/api/admin/config', requireAdminHost, (_req, res) => res.json({
+app.get('/api/admin/config', (_req, res) => res.json({
   configured,
   adminConfigured: ADMIN_EMAILS.size > 0,
   supabaseUrl: configured ? SUPABASE_URL : null,
   supabaseAnonKey: configured ? SUPABASE_ANON_KEY : null
 }));
-app.get('/', (req, res, next) => {
-  if (requestHost(req) === ADMIN_HOST) {
-    return res.sendFile(path.join(__dirname, 'admin', 'index.html'));
-  }
-  next();
-});
-app.get('/__admin_assets/admin.css', requireAdminHost, (_req, res) =>
+app.get(['/admin-chat', '/admin-chat/'], (_req, res) =>
+  res.sendFile(path.join(__dirname, 'admin', 'index.html')));
+app.get('/admin-chat/admin.css', (_req, res) =>
   res.sendFile(path.join(__dirname, 'admin', 'admin.css')));
-app.get('/__admin_assets/admin.js', requireAdminHost, (_req, res) =>
+app.get('/admin-chat/admin.js', (_req, res) =>
   res.sendFile(path.join(__dirname, 'admin', 'admin.js')));
-app.use((req, res, next) => {
-  const host = requestHost(req);
-  if (host === ADMIN_HOST) {
-    if (req.path.startsWith('/api/admin/') || req.path === '/api/admin' ||
-        req.path.startsWith('/__admin_assets/')) return next();
-    return res.status(404).type('text/plain').send('Not found');
-  }
-  if (req.path.startsWith('/api/admin') || req.path.startsWith('/__admin_assets/')) {
-    return res.status(404).json({ error: 'NOT_FOUND' });
-  }
-  next();
-});
 app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: 0, index: 'index.html' }));
 
 app.post('/api/push/subscribe', requireAuth, async (req, res, next) => {
@@ -549,7 +525,7 @@ app.post('/api/profile', requireAuth, async (req, res, next) => {
     ) });
   } catch (error) { next(error); }
 });
-app.use('/api/admin', requireAdminHost, requireAuth, requireAdminRole);
+app.use('/api/admin', requireAuth, requireAdminRole);
 
 app.get('/api/admin/overview', async (_req, res, next) => {
   try {

@@ -181,11 +181,75 @@ async function getAuthUserById(id) {
   if (!response.ok) return null;
   return response.json().catch(() => null);
 }
+async function ensureProfileAvatarBucket(baseHeaders) {
+  const bucket = 'fbchat-profiles';
+  let bucketsResponse;
+  try {
+    // Listing buckets is more reliable than assuming a missing bucket returns HTTP 404.
+    bucketsResponse = await fetch(SUPABASE_URL + '/storage/v1/bucket/', {
+      headers: Object.assign({}, baseHeaders, { Accept: 'application/json' }),
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch {
+    throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
+      'Profile photo storage could not be reached. Check the Supabase Storage service.');
+  }
+  if (!bucketsResponse.ok) {
+    console.warn('[Profile avatar] Bucket list failed with HTTP', bucketsResponse.status);
+    throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
+      'Profile photo storage is unavailable (HTTP ' + bucketsResponse.status + '). Check the Supabase service-role key and Storage service.');
+  }
+
+  const buckets = await bucketsResponse.json().catch(() => null);
+  if (!Array.isArray(buckets)) {
+    throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
+      'Supabase Storage returned an unexpected bucket-list response.');
+  }
+
+  const existing = buckets.find((item) => item?.id === bucket || item?.name === bucket);
+  if (!existing) {
+    const created = await fetch(SUPABASE_URL + '/storage/v1/bucket', {
+      method: 'POST',
+      headers: Object.assign({}, baseHeaders, { 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify({
+        id: bucket, name: bucket, public: true, file_size_limit: 40000,
+        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp']
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (created.ok || created.status === 409) return;
+    const detail = await created.text().catch(() => '');
+    const alreadyExists = /already exists|duplicate bucket|bucket already exists/i.test(detail);
+    if (alreadyExists) return;
+    console.warn('[Profile avatar] Bucket creation failed with HTTP', created.status);
+    throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
+      'Profile photo storage could not be created (HTTP ' + created.status + '). Check Storage permissions.');
+  }
+
+  // Profile avatars must be readable by other chat users, so enforce a public bucket
+  // rather than silently returning public URLs for a private bucket.
+  if (existing.public !== true) {
+    const updated = await fetch(SUPABASE_URL + '/storage/v1/bucket/' + bucket, {
+      method: 'PUT',
+      headers: Object.assign({}, baseHeaders, { 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify({
+        public: true, file_size_limit: 40000,
+        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp']
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!updated.ok) {
+      console.warn('[Profile avatar] Making avatar bucket public failed with HTTP', updated.status);
+      throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
+        'Profile photo storage exists but cannot be configured for public profile pictures (HTTP ' + updated.status + ').');
+    }
+  }
+}
 async function storeProfileAvatar(userId, dataUrl) {
   if (!validUuid(userId) || !validAvatarDataUrl(dataUrl)) {
     throw appError(400, 'INVALID_AVATAR', 'The profile photo is invalid.');
   }
-  const match = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+  const match = dataUrl.match(/^data:image\\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
   if (!match) throw appError(400, 'INVALID_AVATAR', 'The profile photo encoding is invalid.');
   const contentType = match[1] === 'jpeg' ? 'image/jpeg' : 'image/' + match[1];
   const extension = match[1] === 'jpeg' ? 'jpg' : match[1];
@@ -194,28 +258,8 @@ async function storeProfileAvatar(userId, dataUrl) {
     apikey: SUPABASE_SERVICE_ROLE_KEY,
     Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY
   };
-  // Create the small public-avatar bucket if it does not exist yet.
-  const bucketCheck = await fetch(SUPABASE_URL + '/storage/v1/bucket/' + bucket, {
-    headers: baseHeaders, signal: AbortSignal.timeout(8000)
-  });
-  if (bucketCheck.status === 404) {
-    const created = await fetch(SUPABASE_URL + '/storage/v1/bucket', {
-      method: 'POST',
-      headers: Object.assign({}, baseHeaders, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        id: bucket, name: bucket, public: true, file_size_limit: 40000,
-        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp']
-      }),
-      signal: AbortSignal.timeout(8000)
-    });
-    if (!created.ok && created.status !== 409) {
-      const detail = await created.text().catch(() => '');
-      throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE',
-        'Profile photo storage could not be prepared (' + created.status + '). ' + detail.slice(0, 120));
-    }
-  } else if (!bucketCheck.ok) {
-    throw appError(503, 'AVATAR_STORAGE_UNAVAILABLE', 'Profile photo storage is unavailable.');
-  }
+  await ensureProfileAvatarBucket(baseHeaders);
+
   const bytes = Buffer.from(match[2], 'base64');
   if (!bytes.length || bytes.length > 30_000) {
     throw appError(400, 'INVALID_AVATAR', 'The compressed profile photo must be under 30 KB.');
@@ -232,8 +276,9 @@ async function storeProfileAvatar(userId, dataUrl) {
   });
   if (!upload.ok) {
     const detail = await upload.text().catch(() => '');
+    console.warn('[Profile avatar] Upload failed with HTTP', upload.status);
     throw appError(503, 'AVATAR_UPLOAD_FAILED',
-      'Profile photo upload failed (' + upload.status + '). ' + detail.slice(0, 120));
+      'Profile photo upload failed (HTTP ' + upload.status + '). Check Supabase Storage permissions and quota.');
   }
   return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + userId + '.' + extension;
 }

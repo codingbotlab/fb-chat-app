@@ -612,6 +612,7 @@
       try { window.FBChatNative.refreshToken(); } catch {}
     }
     handleQueuedNotificationChat();
+    void showCallPermissionPrompt();
   }
   function startSocket() {
     try { socket?.disconnect(); } catch {}
@@ -718,6 +719,27 @@
     $('#genericLabel').hidden = true; $('#genericInput').hidden = true; $('#genericSubmit').hidden = true; $('#genericForm').hidden = true;
     $('#genericFoot').replaceChildren();
     for (const item of actions) {
+      if (item.type === 'toggle') {
+        const row = document.createElement('label'); row.className = 'permission-row';
+        const copy = document.createElement('span'); copy.className = 'permission-copy';
+        const heading = document.createElement('strong'); heading.textContent = item.label;
+        const detail = document.createElement('small'); detail.textContent = item.detail || '';
+        const status = document.createElement('small'); status.className = 'permission-status'; status.textContent = item.status || '';
+        copy.append(heading, detail, status);
+        const input = document.createElement('input'); input.type = 'checkbox'; input.setAttribute('role', 'switch');
+        input.checked = Boolean(item.checked); input.setAttribute('aria-label', item.label);
+        input.addEventListener('change', async () => {
+          const wanted = input.checked; input.disabled = true;
+          try {
+            const result = await item.action(wanted);
+            if (result && typeof result.checked === 'boolean') input.checked = result.checked;
+            if (result?.status) status.textContent = result.status;
+          } catch (error) {
+            input.checked = !wanted; status.textContent = error?.message || 'Could not update permission.';
+          } finally { input.disabled = false; }
+        });
+        row.append(copy, input); $('#genericFoot').appendChild(row); continue;
+      }
       const button = document.createElement('button'); button.type = 'button';
       button.className = item.className || 'text-action'; button.textContent = item.label;
       button.addEventListener('click', item.action); $('#genericFoot').appendChild(button);
@@ -797,6 +819,8 @@
   function showCallUi(show) { $('#callOverlay').hidden = !show; }
   async function startCall(kind) {
     if (!activePeer || !socket?.connected) return toast('Open a chat and connect before calling.');
+    if (localStorage.getItem(callPermissionToggleKey('microphone')) === 'off') return toast('Microphone is disabled in Settings. Enable it before calling.', 4500);
+    if (kind === 'video' && localStorage.getItem(callPermissionToggleKey('camera')) === 'off') return toast('Camera is disabled in Settings. Enable it before making a video call.', 4500);
     if (peerConnection) return toast('A call is already active.');
     currentCallPeer = activePeer.username; currentCallKind = kind === 'video' ? 'video' : 'audio';
     try {
@@ -827,6 +851,14 @@
   }
   async function acceptIncomingCall() {
     if (!incomingCall || !socket?.connected) return;
+    if (localStorage.getItem(callPermissionToggleKey('microphone')) === 'off') {
+      socket.emit('call:end', { to: incomingCall.from }); incomingCall = null;
+      toast('Microphone is disabled in Settings. Enable it before accepting calls.', 4500); return;
+    }
+    if (incomingCall.kind === 'video' && localStorage.getItem(callPermissionToggleKey('camera')) === 'off') {
+      socket.emit('call:end', { to: incomingCall.from }); incomingCall = null;
+      toast('Camera is disabled in Settings. Enable it before accepting video calls.', 4500); return;
+    }
     const call = incomingCall; incomingCall = null; currentCallPeer = call.from; currentCallKind = call.kind;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: currentCallKind === 'video' });
@@ -977,12 +1009,101 @@
       [{ label: 'Sign out', className: 'danger-action', action: signOut },
        { label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
   }
+  const CALL_PERMISSION_PROMPT_KEY = 'fbchat-call-permission-prompt-v1';
+  function callPermissionToggleKey(kind) { return 'fbchat-call-' + kind + '-enabled'; }
+  async function getMediaPermissionStatus(kind) {
+    if (window.FBChatNative && typeof window.FBChatNative.getCallPermissionStatus === 'function') {
+      try { const status = JSON.parse(window.FBChatNative.getCallPermissionStatus() || '{}'); return status[kind] ? 'granted' : 'not-granted'; } catch {}
+    }
+    try {
+      if (navigator.permissions?.query) {
+        const result = await navigator.permissions.query({ name: kind === 'microphone' ? 'microphone' : 'camera' });
+        return result.state || 'prompt';
+      }
+    } catch {}
+    return 'prompt';
+  }
+  function permissionStatusText(kind, state) {
+    if (localStorage.getItem(callPermissionToggleKey(kind)) === 'off') return 'Disabled inside FB Chat.';
+    if (state === 'granted') return 'Device permission: allowed.';
+    if (state === 'denied') return 'Permission denied. Check browser or device settings.';
+    if (state === 'not-granted') return 'Device permission not granted yet; turn on to request it.';
+    return 'Not requested yet; turn on to ask for permission.';
+  }
+  async function requestMediaPermission(kind) {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera/microphone access is unavailable here. Update the app or open the HTTPS website in Chrome.');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: kind === 'microphone', video: kind === 'camera' });
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  }
+  async function showCallPermissionPrompt() {
+    if (!me || localStorage.getItem(CALL_PERMISSION_PROMPT_KEY) === 'done') return;
+    const [mic, cam] = await Promise.all([getMediaPermissionStatus('microphone'), getMediaPermissionStatus('camera')]);
+    if (mic === 'granted' && cam === 'granted') {
+      localStorage.setItem(CALL_PERMISSION_PROMPT_KEY, 'done');
+      if (localStorage.getItem(callPermissionToggleKey('microphone')) == null) localStorage.setItem(callPermissionToggleKey('microphone'), 'on');
+      if (localStorage.getItem(callPermissionToggleKey('camera')) == null) localStorage.setItem(callPermissionToggleKey('camera'), 'on');
+      return;
+    }
+    infoModal('Voice & video calls are here', 'Allow microphone access for voice calls and camera access for video calls. Android will ask for device permission when needed. You can change these controls later in Settings.',
+      [
+        { label: 'Enable microphone & camera', className: 'primary', action: async () => {
+          $('#genericModal').hidden = true;
+          localStorage.setItem(CALL_PERMISSION_PROMPT_KEY, 'done');
+          try {
+            if (!navigator.mediaDevices?.getUserMedia) throw new Error('Media permission is not available in this app version.');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            stream.getTracks().forEach(track => track.stop());
+            localStorage.setItem(callPermissionToggleKey('microphone'), 'on');
+            localStorage.setItem(callPermissionToggleKey('camera'), 'on');
+            toast('Microphone and camera are ready for calls.', 4000);
+          } catch (error) {
+            toast(error?.name === 'NotAllowedError' ? 'Permission was declined. Open Settings and enable microphone/camera access to try again.' : (error?.message || 'Could not enable call permissions.'), 5500);
+          }
+        }},
+        { label: 'Not now', action: () => {
+          localStorage.setItem(CALL_PERMISSION_PROMPT_KEY, 'done');
+          $('#genericModal').hidden = true;
+        }}
+      ]);
+  }
+
   async function settingsDialog() {
     const nativeApp = Boolean(window.FBChatNative);
     const soundOn = localStorage.getItem('fbchat-message-sound') !== 'off';
     const pushOn = localStorage.getItem('fbchat-push-enabled') === 'on';
     const registered = Boolean(me && localStorage.getItem('fbchat-fcm-registered-' + me.id));
+    const [micState, cameraState] = await Promise.all([getMediaPermissionStatus('microphone'), getMediaPermissionStatus('camera')]);
+    const permissionToggle = (kind, label, state) => {
+      const saved = localStorage.getItem(callPermissionToggleKey(kind));
+      return {
+        type: 'toggle', label,
+        detail: 'Controls whether FB Chat may use this device feature for calls.',
+        status: permissionStatusText(kind, state),
+        checked: saved === 'on' || (saved == null && state === 'granted'),
+        action: async (enabled) => {
+          if (!enabled) {
+            localStorage.setItem(callPermissionToggleKey(kind), 'off');
+            return { checked: false, status: 'Disabled inside FB Chat. System permission is unchanged.' };
+          }
+          try {
+            await requestMediaPermission(kind);
+            localStorage.setItem(callPermissionToggleKey(kind), 'on');
+            return { checked: true, status: 'Device permission allowed.' };
+          } catch (error) {
+            localStorage.setItem(callPermissionToggleKey(kind), 'off');
+            const latest = await getMediaPermissionStatus(kind);
+            const status = latest === 'denied' || latest === 'not-granted'
+              ? 'Not allowed. Use device/browser settings if the system prompt no longer appears.'
+              : (error?.message || 'Permission was not granted.');
+            return { checked: false, status };
+          }
+        }
+      };
+    };
     const actions = [
+      permissionToggle('microphone', 'Microphone for voice calls', micState),
+      permissionToggle('camera', 'Camera for video calls', cameraState),
       {
         label: soundOn ? 'Turn message sound off' : 'Turn message sound on',
         action: () => {
@@ -1010,13 +1131,17 @@
           else await enablePushNotifications();
         }
       },
+      ...(nativeApp ? [{ label: 'Open Android app permissions', action: () => {
+        try { window.FBChatNative.openAppSettings(); }
+        catch { toast('Open Android Settings → Apps → FB Chat → Permissions.', 5000); }
+      }}] : []),
       { label: 'Privacy & encryption details', action: () => { $('#genericModal').hidden = true; void securityDialog(); } },
       { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
     ];
     const description = nativeApp
-      ? 'FB Chat will register this Android device for background alerts. Android controls notification permission, sound, and vibration. Message text is not included in push payloads.'
-      : 'Message sound plays while this app is open. Background push requires browser notification permission and server push keys. Your message text is never included in push notifications.';
-    infoModal('Settings', description, actions);
+      ? 'Use the switches below to enable or disable camera and microphone inside FB Chat. Android still controls device-level permissions; use Open Android app permissions to revoke them completely.'
+      : 'Use the switches below to allow camera and microphone inside FB Chat. Your browser controls site-level permission; to revoke it completely, open this site’s permissions in the browser.';
+    infoModal('Settings & permissions', description, actions);
   }
   async function securityDialog() {
     if (!activePeer) {

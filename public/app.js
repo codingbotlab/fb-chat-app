@@ -334,10 +334,10 @@
     try {
       const value = JSON.parse(raw);
       if (value && value.version === 1 && typeof value.text === 'string') {
-        return { plaintext: value.text, reply: value.reply && typeof value.reply.text === 'string' ? value.reply : null };
+        return { plaintext: value.text, reply: value.reply && typeof value.reply.text === 'string' ? value.reply : null, media: value.media && typeof value.media.data === 'string' ? value.media : null };
       }
     } catch {}
-    return { plaintext: String(raw || ''), reply: null };
+    return { plaintext: String(raw || ''), reply: null, media: null };
   }
   function starStorageKey() { return 'fbchat-starred-' + (me?.id || 'anonymous'); }
   function hiddenStorageKey() { return 'fbchat-hidden-' + (me?.id || 'anonymous'); }
@@ -534,8 +534,19 @@
         const snippet = document.createElement('span'); snippet.textContent = message.reply.text.slice(0, 280);
         quote.append(author, snippet); bubble.appendChild(quote);
       }
+      if (message.media && /^data:(image|video|audio)\//.test(message.media.data) && message.media.data.length <= 50000) {
+        const media = message.media;
+        if (media.mime?.startsWith('image/')) {
+          const image = document.createElement('img'); image.src = media.data; image.alt = media.name || 'Shared image'; image.className = 'shared-media'; image.loading = 'lazy'; bubble.appendChild(image);
+        } else if (media.mime?.startsWith('video/')) {
+          const video = document.createElement('video'); video.src = media.data; video.controls = true; video.playsInline = true; video.className = 'shared-media'; bubble.appendChild(video);
+        } else {
+          const audio = document.createElement('audio'); audio.src = media.data; audio.controls = true; bubble.appendChild(audio);
+        }
+        const filename = document.createElement('div'); filename.className = 'media-filename'; filename.textContent = media.name || 'Shared media'; bubble.appendChild(filename);
+      }
       const body = document.createElement('div'); body.className = 'bubble-text'; body.textContent = message.plaintext || '';
-      bubble.appendChild(body);
+      if (body.textContent) bubble.appendChild(body);
       const meta = document.createElement('div'); meta.className = 'bmeta';
       if (starred.has(message.id)) {
         const star = document.createElement('span'); star.className = 'star-mark'; star.textContent = '★'; star.title = 'Starred message'; meta.appendChild(star);
@@ -831,6 +842,7 @@
       showCallUi(true); $('#callTitle').textContent = (currentCallKind === 'video' ? 'Video call · ' : 'Voice call · ') + call.from;
       callStatus('Connecting…'); socket.emit('call:accept', { to: currentCallPeer });
       if (call.description) await peerConnection.setRemoteDescription(call.description);
+      for (const candidate of (call.candidates || [])) { try { await peerConnection.addIceCandidate(candidate); } catch {} }
       const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
       socket.emit('call:signal', { to: currentCallPeer, signal: { description: peerConnection.localDescription } });
     } catch (error) { endCall(true); toast(error.message || 'Could not accept call.'); }
@@ -871,23 +883,31 @@
       ]);
   }
   function enableMediaControls() {
-    $('#voiceCallButton')?.addEventListener('click', () => void startCall('audio'));
-    $('#videoCallButton')?.addEventListener('click', () => void startCall('video'));
-    $('#endCallButton')?.addEventListener('click', () => endCall(true));
-    $('#muteCallButton')?.addEventListener('click', () => {
+    if ($('#voiceCallButton')) $('#voiceCallButton').onclick = () => void startCall('audio');
+    if ($('#videoCallButton')) $('#videoCallButton').onclick = () => void startCall('video');
+    if ($('#endCallButton')) $('#endCallButton').onclick = () => endCall(true);
+    if ($('#muteCallButton')) $('#muteCallButton').onclick = () => {
       const track = localStream?.getAudioTracks()[0]; if (!track) return;
       track.enabled = !track.enabled; $('#muteCallButton').textContent = track.enabled ? 'Mute mic' : 'Unmute mic';
-    });
-    $('#cameraCallButton')?.addEventListener('click', () => {
+    };
+    if ($('#cameraCallButton')) $('#cameraCallButton').onclick = () => {
       const track = localStream?.getVideoTracks()[0]; if (!track) return;
       track.enabled = !track.enabled; $('#cameraCallButton').textContent = track.enabled ? 'Camera off' : 'Camera on';
-    });
-    if (socket) {
+    };
+    if (socket && !socket.__fbCallHandlers) {
+      socket.__fbCallHandlers = true;
       socket.on('call:incoming', incomingCallDialog);
-      socket.on('call:signal', data => void handleCallSignal(data));
+      socket.on('call:signal', data => {
+        if (!peerConnection && incomingCall && data.from === incomingCall.from) {
+          if (data.signal?.description) incomingCall.description = data.signal.description;
+          if (data.signal?.candidate) (incomingCall.candidates ||= []).push(data.signal.candidate);
+          return;
+        }
+        void handleCallSignal(data);
+      });
       socket.on('call:accepted', () => callStatus('Connecting…'));
       socket.on('call:ringing', () => callStatus('Ringing…'));
-      socket.on('call:ended', data => { if (data.from === currentCallPeer) { endCall(false); toast('Call ended.'); } });
+      socket.on('call:ended', data => { if (data.from === currentCallPeer || data.from === incomingCall?.from) { endCall(false); toast('Call ended.'); } });
       socket.on('call:error', data => { callStatus(data.message || 'Call failed'); toast(data.message || 'Call failed'); });
     }
   }
@@ -895,24 +915,31 @@
   async function sendMessage(event) {
     event.preventDefault();
     if (!activePeer || !profile) return;
-    const input = $('#messageInput'), text = input.value.trim();
-    if (!text) return;
+    const input = $('#messageInput'), text = input.value.trim(), file = $('#mediaInput')?.files?.[0] || null;
+    if (!text && !file) return;
     if (text.length > 4000) { toast('Message is too long.'); return; }
+    if (file && file.size > 24000) { toast('Encrypted attachments are currently limited to 24 KB per file.'); return; }
     if (!socket?.connected || !connected) { toast('Reconnecting. The message was not sent.'); return; }
     if (changedFingerprint) { toast('Verify the contact fingerprint before sending.'); return; }
     $('#sendBtn').disabled = true;
     try {
       const reply = replyTarget ? { id: replyTarget.id, author: replyTarget.author, text: replyTarget.text } : null;
-      const encrypted = await encryptText(JSON.stringify({ version: 1, text, reply }), activePeer);
+      let media = null;
+      if (file) {
+        const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => reject(new Error('Could not read this file.')); reader.readAsDataURL(file); });
+        if (!/^data:(image|video|audio)\//.test(data)) throw new Error('Only image, video and audio files are supported.');
+        media = { name: file.name.slice(0, 120), mime: file.type, data };
+      }
+      const encrypted = await encryptText(JSON.stringify({ version: 1, text, reply, media }), activePeer);
       await new Promise((resolve, reject) => {
         socket.timeout(12000).emit('chat:send', Object.assign({ to: activePeer.username }, encrypted), (timeout, ack) => {
           if (timeout) return reject(new Error('No server acknowledgement. Please retry.'));
           if (ack?.error) return reject(new Error(ack.error));
           if (!ack?.message?.id) return reject(new Error('The server did not confirm saving this message.'));
-          const saved = Object.assign({}, ack.message, { plaintext: text, reply });
+          const saved = Object.assign({}, ack.message, { plaintext: text, reply, media });
           const history = histories.get(activePeer.id) || []; history.push(saved); histories.set(activePeer.id, history);
           addChat(activePeer, Object.assign({}, saved, { preview: text })); renderHistory(activePeer.id);
-          input.value = ''; input.style.height = '24px';
+          input.value = ''; input.style.height = '24px'; if ($('#mediaInput')) $('#mediaInput').value = '';
           replyTarget = null; $('#replyBar').hidden = true; $('#replyText').textContent = '';
           $('#emojiPicker').hidden = true;
           if (ack.delivered) toast('Message sent securely.', 1200); resolve();
@@ -1017,6 +1044,11 @@
     }));
     $('#backToChats').addEventListener('click', () => $('#app').classList.remove('chat-open'));
     $('#composeForm').addEventListener('submit', sendMessage);
+    $('#attachMediaButton')?.addEventListener('click', () => $('#mediaInput')?.click());
+    $('#mediaInput')?.addEventListener('change', () => {
+      const file = $('#mediaInput').files?.[0];
+      if (file) toast('Selected ' + file.name + '. Send it with the message button; files are encrypted before upload.');
+    });
     $('#messageInput').addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('#composeForm').requestSubmit(); }
     });

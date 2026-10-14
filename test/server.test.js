@@ -229,7 +229,9 @@ test('legacy profile avatars are recovered from Storage or migrated from raster 
   assert.match(server, /await findStoredProfileAvatar\(sessionResult\.user\.id\)/);
   assert.match(server, /await storeProfileAvatar\(sessionResult\.user\.id, initialAvatar\)/);
   assert.match(server, /await ensureStoredAvatarMetadata\(item\)/);
+  assert.match(server, /metadata = await ensureStoredAvatarMetadata\(req\.authUser\)/);
   assert.match(server, /avatar_url: visible\.avatar_url, bio: visible\.bio/);
+  assert.match(server, /findStoredProfileAvatar\(userId\)/);
 });
 
 test('normal user sign-in cleans old oversized auth metadata before the browser receives its JWT', () => {

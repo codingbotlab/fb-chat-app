@@ -128,6 +128,7 @@
         <button class="install-app-btn transition-all duration-200 hover:border-emerald-400/50" id="installAppButton" type="button" hidden>Install FB Chat app</button>
       </form>
       <div class="auth-message" id="authMessage" role="status"></div>
+      <div class="qr-login-actions"><button type="button" id="showQrLogin" class="install-app-btn">Link with phone QR</button><button type="button" id="scanQrLogin" class="install-app-btn">Scan QR with this phone</button></div>
       <div class="auth-foot"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>Encrypted message contents are not stored as plain text.</span></div>
     </div>
   </section>
@@ -280,11 +281,23 @@
       <p class="call-footnote">Private one-to-one call · Audio/video travel directly between devices when the network allows.</p>
     </div>
   </section>
+  <section class="qr-pair-modal" id="qrPairModal" hidden aria-modal="true" role="dialog" aria-labelledby="qrPairTitle">
+    <div class="qr-pair-card">
+      <button type="button" class="qr-pair-close" id="qrPairClose" aria-label="Close">×</button>
+      <h2 id="qrPairTitle">Link device</h2>
+      <p id="qrPairDescription">Scan this code using FB Chat on your signed-in phone.</p>
+      <canvas id="qrPairCanvas" width="280" height="280" aria-label="One-time device pairing QR code"></canvas>
+      <video id="qrPairVideo" playsinline hidden></video>
+      <p id="qrPairStatus" role="status">Preparing secure QR…</p>
+      <button type="button" class="primary" id="qrPairStartCamera" hidden>Start camera scan</button>
+      <button type="button" class="install-app-btn" id="qrPairCancel">Cancel</button>
+    </div>
+  </section>
   <button type="button" class="call-floating-button" id="callFloatingButton" hidden>↗ Return to call</button>
   <div class="toast alert alert-info" id="toast" role="status" aria-live="polite" aria-atomic="true"><i class="bi bi-info-circle-fill" aria-hidden="true"></i><span id="toastMessage"></span></div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js" crossorigin="anonymous"></script>\n  <script src="/qr-login.js?v=1"></script>
   <script src="/pwa.js"></script>
 </body>
 </html>

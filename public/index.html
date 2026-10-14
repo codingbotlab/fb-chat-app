@@ -25,6 +25,7 @@
       <div class="brand" title="FB Chat"><span class="brand-icon">f.</span></div>
       <button class="railbtn active" title="Chats" aria-label="Chats" data-rail="chats"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.8 7.3L3 20l1.2-4A8.5 8.5 0 1 1 21 11.5Z"/></svg><span class="rail-dot" id="unreadDot" hidden></span></button>
       <button class="railbtn" title="Recent calls" aria-label="Recent calls" data-rail="calls"><i class="bi bi-telephone" aria-hidden="true"></i></button>
+      <button class="railbtn" title="Contacts" aria-label="Contacts" data-rail="contacts"><i class="bi bi-person-lines-fill" aria-hidden="true"></i></button>
       <div class="railbottom">
         <button class="railbtn" id="profileButton" title="Profile" aria-label="Profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-4 2.9-6.2 7-6.2s7 2.2 7 6.2"/></svg></button>
         <button class="railbtn" id="settingsButton" title="Security and settings" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1 1.1 1.9-2 3.5-2.2-.6-.1.1a8 8 0 0 1-2.2 1.3l-.5 2.1h-4l-.5-2.1a8 8 0 0 1-2.2-1.3l-2.2.6-2-3.5 1.1-1.9a8 8 0 0 1 0-2.6l-1.1-1.9 2-3.5 2.2.6a8 8 0 0 1 2.2-1.3L9.6 4h4l.5 2.1a8 8 0 0 1 2.2 1.3l2.2-.6 2 3.5-1.1 1.9a8 8 0 0 1 0 2.8Z" transform="translate(0 -1) scale(.9)"/></svg></button>
@@ -61,6 +62,7 @@
           <button class="iconbtn" id="videoCallButton" title="Video call" aria-label="Video call"><i class="bi bi-camera-video" aria-hidden="true"></i></button>
 
           <button class="iconbtn" id="searchInChat" title="Search this chat" aria-label="Search this chat"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></button>
+          <button id="chatDetails" type="button" hidden aria-hidden="true" tabindex="-1"></button>
         </div>
       </header>
       <section class="welcome" id="welcome">
@@ -103,6 +105,7 @@
     <nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="Main navigation">
       <button type="button" class="bottom-nav-item active" data-bottom-nav="chats" aria-current="page"><i class="bi bi-chat-dots-fill" aria-hidden="true"></i><span>Chats</span></button>
       <button type="button" class="bottom-nav-item" data-bottom-nav="calls"><i class="bi bi-telephone" aria-hidden="true"></i><span>Calls</span></button>
+      <button type="button" class="bottom-nav-item" data-bottom-nav="contacts"><i class="bi bi-person-lines-fill" aria-hidden="true"></i><span>Contacts</span></button>
       <button type="button" class="bottom-nav-item" data-bottom-nav="profile"><i class="bi bi-person-circle" aria-hidden="true"></i><span>Profile</span></button>
     </nav>
   </div>
@@ -226,6 +229,29 @@
         <div class="user-profile-actions">
           <button type="button" class="primary" id="userProfileMessageButton"><i class="bi bi-chat-dots-fill" aria-hidden="true"></i> Message</button>
           <button type="button" class="text-action" id="userProfileDoneButton">Done</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="modalback contacts-modal" id="contactsModal" hidden>
+    <section class="modalcard profile-card profile-page contacts-page" role="dialog" aria-modal="true" aria-labelledby="contactsTitle">
+      <header class="profile-page-header">
+        <button class="profile-back-button" id="contactsClose" type="button" aria-label="Back to chats">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          <span>Back</span>
+        </button>
+        <div class="profile-page-heading">
+          <h2 id="contactsTitle">Contacts</h2>
+          <p class="profile-intro" id="contactsStatus">Find people already on FB Chat</p>
+        </div>
+        <button type="button" class="contacts-import-top" id="contactsImportButton" title="Import contacts"><i class="bi bi-person-lines-fill" aria-hidden="true"></i><span>Access contacts</span></button>
+      </header>
+      <div class="profile-page-body contacts-page-body">
+        <div class="contacts-privacy-note"><i class="bi bi-shield-lock-fill" aria-hidden="true"></i><p>Contacts are read only after you tap <strong>Access contacts</strong>. Names stay on this device; phone numbers and emails are sent securely only to check who is on FB Chat and are not saved.</p></div>
+        <input type="file" id="contactsFileInput" accept=".vcf,.vcard,text/vcard,text/x-vcard,.csv,text/csv" hidden>
+        <div class="contacts-search-wrap"><i class="bi bi-search" aria-hidden="true"></i><input type="search" id="contactsSearch" placeholder="Search contacts" aria-label="Search contacts" autocomplete="off"></div>
+        <div id="contactsList" class="contacts-list" aria-live="polite">
+          <div class="contacts-empty"><i class="bi bi-person-lines-fill" aria-hidden="true"></i><strong>Find people you know</strong><p>Allow contacts access to check who is already using FB Chat.</p><button type="button" class="primary" id="contactsInitialImport">Access contacts</button></div>
         </div>
       </div>
     </section>

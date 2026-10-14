@@ -344,3 +344,178 @@ svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   .profile-modal{align-items:flex-end;padding:0}
   .profile-card{width:100%;max-height:92dvh;border-radius:18px 18px 0 0;padding:20px 17px max(16px,env(safe-area-inset-bottom))}
 }
+
+
+/* WhatsApp-inspired compact layout refresh (no messaging logic changes). */
+.app{
+  width:100%;max-width:none;margin:0;
+  grid-template-columns:58px minmax(300px,360px) minmax(0,1fr);
+  border:0;background:#0b141a;
+}
+.rail{
+  gap:7px;padding:12px 7px 10px;
+  background:#101b21;border-color:#22343b;
+}
+.brand{margin-bottom:8px}
+.brand-icon{width:38px;height:38px;border-radius:12px;font-size:22px}
+.railbtn{width:42px;height:42px;border-radius:12px}
+.railbtn .bi{font-size:19px;line-height:1}
+.railbtn.active:before{left:-7px}
+.railbottom{gap:7px}
+.inbox{background:#101b21;border-color:#263840}
+.inboxhead{gap:8px;padding:16px 15px 10px}
+.inbox-title h1{font-size:21px;letter-spacing:-.4px}
+.subline{gap:6px;margin-top:5px;font-size:10px}
+.inbox-actions{gap:2px}
+.iconbtn{width:37px;height:37px}
+.newchat{background:#203139;color:#e9edef}
+.searchwrap{padding:0 12px 10px}
+.searchwrap svg{left:24px;width:16px;height:16px}
+.search{height:36px;padding-left:37px;border-radius:18px;background:#1d2a31;font-size:12px}
+.filterrow{gap:6px;padding:0 12px 9px}
+.filter{padding:6px 12px;border-radius:999px;background:#1d2a31;font-size:11px}
+.filter.active{background:#075e54;color:#e7fffa}
+.chatlist{padding:3px 5px 8px;scrollbar-width:thin}
+.chatitem{gap:10px;min-height:67px;padding:8px 8px;border:0;border-radius:8px}
+.chatitem:hover{background:#1b2a31}
+.chatitem.active{background:#20383b}
+.chatavatar{width:44px;height:44px;font-size:15px}
+.online-dot{width:11px;height:11px}
+.chatrow strong{font-size:13px;font-weight:650}
+.chatrow time{font-size:10px}
+.lastmsg{margin-top:3px;font-size:11px;line-height:1.35;color:#a0b1b7}
+.unread{right:0;bottom:0;min-width:18px;height:18px;font-size:10px}
+.inboxfoot{min-height:34px;padding:8px 5px;font-size:9px;border-color:#24373e}
+.inboxfoot svg{width:13px;height:13px}
+.conversation{
+  background-color:#0b141a;
+  background-image:radial-gradient(rgba(170,205,202,.055) .7px,transparent .7px);
+  background-size:20px 20px;
+}
+.convhead{height:64px;padding:0 17px;gap:10px;background:#17242b;border-color:#263840}
+.person{gap:10px}
+.person .chatavatar{width:41px;height:41px;font-size:14px}
+.personname{font-size:14px}
+.personstatus{margin-top:2px;font-size:10px}
+.headactions{gap:2px}
+.headactions .iconbtn{width:36px;height:36px}
+.headactions .bi{font-size:17px}
+.messages{gap:6px;padding:16px clamp(12px,3.2vw,54px) 18px}
+.daydivider,.message-date{padding:5px 10px;border-radius:7px;font-size:10px}
+.bubble{
+  max-width:min(78%,620px);padding:8px 10px 5px;
+  border:0;border-radius:9px 10px 10px 3px;
+  font-size:13px;line-height:1.5;box-shadow:0 1px 1px rgba(0,0,0,.16);
+}
+.bubble.mine{border:0;border-radius:10px 3px 10px 10px;background:#005c4b}
+.bmeta{margin-top:4px;font-size:9px}
+.composerwrap{padding:8px clamp(10px,1.8vw,22px) 10px;background:#101b21}
+.compose{gap:6px;align-items:center}
+.compose-tool{width:36px;height:40px}
+.compose-tool .bi{font-size:19px}
+.messagebox{
+  min-height:42px;padding:7px 14px;border:1px solid transparent;
+  border-radius:23px;background:#202c33;
+}
+.messagebox:focus-within{border-color:#3a5d62}
+.messagebox textarea{min-height:24px;max-height:112px;font-size:13px;line-height:1.45}
+.sendbtn{width:40px;height:40px;border-radius:50%;background:#00a884;color:#fff}
+.sendbtn:hover{background:#05bd96}
+.sendbtn svg{width:19px;height:19px}
+.hint{display:none}
+.typingline{padding:0 24px 5px}
+.welcome{padding:20px}
+.welcome-inner{width:min(370px,100%)}
+.welcome-logo{width:62px;height:62px;margin-bottom:17px;border-radius:20px;box-shadow:0 8px 28px #0002}
+.welcome-logo svg{width:40px;height:40px}
+.welcome h2{font-size:23px;letter-spacing:-.5px;margin-bottom:7px}
+.welcome p{font-size:12px;line-height:1.65;margin-bottom:16px}
+.privacy-note{gap:10px;margin-bottom:14px;padding:10px 12px;border-radius:10px}
+.privacy-note strong{font-size:11px}
+.privacy-note span{font-size:10px}
+.welcome-action{min-height:40px;max-width:180px;border-radius:22px}
+.bottom-nav-item:focus-visible,.railbtn:focus-visible,.iconbtn:focus-visible{outline-offset:2px}
+.mobile-bottom-nav{border-color:#263840}
+@media(min-width:721px){
+  .mobile-bottom-nav{display:none!important}
+}
+@media(max-width:1000px) and (min-width:721px){
+  .app{grid-template-columns:52px minmax(280px,330px) minmax(0,1fr)}
+  .messages{padding-inline:14px}
+  .headactions .iconbtn{width:34px;height:34px}
+}
+@media(max-width:720px){
+  html,body{background:#101b21}
+  .app{height:100dvh;grid-template-columns:minmax(0,1fr);padding-bottom:calc(64px + env(safe-area-inset-bottom));background:#101b21}
+  .rail{display:none}
+  .inbox{border:0}
+  .inboxhead{padding:max(12px,env(safe-area-inset-top)) 13px 8px}
+  .inbox-title h1{font-size:22px;letter-spacing:-.4px}
+  .subline{font-size:10px}
+  .inbox-actions{gap:4px}
+  .inbox-actions .iconbtn{width:38px;height:38px}
+  .mobile-profile{display:none!important}
+  .mobile-settings{display:grid;background:transparent;color:#d2dce0}
+  .newchat{background:#1d3938;color:#64dbb4}
+  .searchwrap{padding:0 12px 9px}
+  .searchwrap svg{left:24px}
+  .search{height:38px;border-radius:20px;font-size:13px}
+  .filterrow{gap:6px;padding:0 12px 9px}
+  .filter{padding:6px 13px;font-size:12px}
+  .chatlist{padding:2px 5px 5px}
+  .chatitem{gap:11px;min-height:70px;padding:9px 8px;border-radius:8px}
+  .chatavatar{width:47px;height:47px;font-size:16px}
+  .chatrow strong{font-size:14px}
+  .chatrow time{font-size:10px}
+  .lastmsg{margin-top:4px;font-size:12px;line-height:1.35}
+  .unread{min-width:19px;height:19px;font-size:10px}
+  .inboxfoot{min-height:31px;padding:6px 4px;font-size:9px}
+  .conversation{min-height:0}
+  .convhead{height:60px;padding:0 8px;gap:5px}
+  .backbtn{width:31px;height:35px;margin:0}
+  .person{gap:8px}
+  .person .chatavatar{width:39px;height:39px}
+  .personname{font-size:13px}
+  .personstatus{font-size:9px}
+  .headactions{gap:0}
+  .headactions .iconbtn{width:32px;height:34px}
+  .headactions .bi{font-size:16px}
+  .headactions svg{width:17px;height:17px}
+  .messages{padding:13px 9px 16px;gap:5px}
+  .bubble{max-width:89%;padding:7px 9px 5px;font-size:13px;line-height:1.45}
+  .message-date,.daydivider{font-size:9px}
+  .composerwrap{padding:7px 7px max(8px,env(safe-area-inset-bottom));background:#101b21}
+  .compose{gap:4px}
+  .compose-tool{width:31px;height:39px}
+  .compose-tool svg{width:19px;height:19px}
+  .messagebox{min-height:40px;padding:6px 12px}
+  .messagebox textarea{font-size:13px;min-height:24px;max-height:100px}
+  .sendbtn{width:39px;height:39px}
+  .typingline{padding:0 13px 4px}
+  .welcome{padding:16px}
+  .welcome-logo{width:58px;height:58px;margin-bottom:14px;border-radius:18px}
+  .welcome-logo svg{width:37px;height:37px}
+  .welcome h2{font-size:22px}
+  .welcome p{font-size:12px;line-height:1.55}
+  .privacy-note{max-width:310px;margin-bottom:12px;padding:9px 10px}
+  .mobile-bottom-nav{
+    min-height:calc(62px + env(safe-area-inset-bottom));
+    padding:5px 8px calc(5px + env(safe-area-inset-bottom));
+    background:rgba(16,27,33,.98);border-top:1px solid #263840;
+  }
+  .bottom-nav-item{gap:3px;font-size:10px}
+  .bottom-nav-item .bi{width:52px;height:27px;font-size:19px}
+  .bottom-nav-item.active .bi{background:rgba(0,168,132,.20)}
+  .app.chat-open .mobile-bottom-nav{display:none}
+}
+@media(max-width:360px){
+  .inboxhead{padding-inline:10px}
+  .inbox-title h1{font-size:20px}
+  .inbox-actions .iconbtn{width:34px;height:34px}
+  .headactions .iconbtn{width:29px;height:32px}
+  .person .chatavatar{width:35px;height:35px}
+  .personname{font-size:12px}
+  .headactions .bi{font-size:14px}
+  .compose-tool{width:28px}
+  .messagebox{padding-inline:9px}
+}

@@ -26,8 +26,13 @@
     return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   }
   function safeAvatar(value) {
-    return typeof value === 'string' && value.length < 90000 &&
-      /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : '';
+    if (typeof value !== 'string') return '';
+    if (value.length <= 40000 && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return value;
+    try {
+      const url = new URL(value), base = new URL(config?.supabaseUrl || '');
+      return url.protocol === 'https:' && url.origin === base.origin &&
+        /^\/storage\/v1\/object\/public\/fbchat-profiles\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i.test(url.pathname) ? value : '';
+    } catch { return ''; }
   }
   async function refreshSession() {
     if (!authSession?.refresh_token) throw new Error('Please sign in again.');

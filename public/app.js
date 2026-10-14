@@ -12,7 +12,7 @@
   let nativeFcmToken = '';
   let onlineUsers = [], chats = new Map(), histories = new Map(), unread = new Map();
   let busy = false, toastTimer = null, typingTimer = null, changedFingerprint = null, replyTarget = null;
-  let chatOpenRequest = 0;
+  let chatOpenRequest = 0, viewedPeer = null, contactEntries = [], contactImportBusy = false;
 
   const norm = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const to64 = (buffer) => {
@@ -525,7 +525,13 @@
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'chatitem' + (activePeer?.id === person.id ? ' active' : '');
       const avatar = document.createElement('div');
-      avatar.className = 'chatavatar'; setAvatar(avatar, person);
+      avatar.className = 'chatavatar profile-avatar-trigger'; setAvatar(avatar, person);
+      avatar.setAttribute('role', 'button'); avatar.setAttribute('tabindex', '0');
+      avatar.setAttribute('aria-label', 'View ' + nameOf(person) + ' profile');
+      avatar.addEventListener('click', (event) => { event.stopPropagation(); openUserProfile(person); });
+      avatar.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openUserProfile(person); }
+      });
       if (isHere) { const dot = document.createElement('span'); dot.className = 'online-dot'; avatar.appendChild(dot); }
       const body = document.createElement('div'); body.className = 'chatbody';
       const row = document.createElement('div'); row.className = 'chatrow';
@@ -819,6 +825,294 @@
     $('#genericForm').hidden = false; $('#genericFoot').textContent = 'Both accounts must finish encryption setup before chatting.';
     $('#genericModal').hidden = false; $('#genericInput').focus();
   }
+  function closeUserProfile() {
+    $('#userProfileModal').hidden = true;
+    viewedPeer = null;
+  }
+  function openUserProfile(person) {
+    if (!person?.id || person.id === me?.id) return;
+    viewedPeer = Object.assign({}, person);
+    $('#userProfileName').textContent = nameOf(person);
+    $('#userProfileUsername').textContent = person.username ? '@' + person.username : 'FB Chat member';
+    $('#userProfileUsernameDetail').textContent = person.username ? '@' + person.username : 'Username not set up yet';
+    $('#userProfileAbout').textContent = person.bio || 'Hey there! I am using FB Chat.';
+    const isOnline = online(person.id);
+    $('#userProfilePresence').textContent = isOnline ? 'online' : 'End-to-end encrypted';
+    $('#userProfilePresenceDot').classList.toggle('online', isOnline);
+    setAvatar($('#userProfileAvatar'), person);
+    const date = person.created_at ? new Date(person.created_at) : null;
+    const since = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString([], { month: 'long', year: 'numeric' }) : '';
+    $('#userProfileSinceRow').hidden = !since;
+    $('#userProfileSince').textContent = since;
+    $('#userProfileMessageButton').disabled = !person.username || !person.public_key;
+    $('#userProfileMessageButton').textContent = person.public_key ? 'Message' : 'Not ready for chat';
+    $('#userProfileMessageButton').replaceChildren();
+    if (person.public_key) {
+      const icon = document.createElement('i');
+      icon.className = 'bi bi-chat-dots-fill';
+      icon.setAttribute('aria-hidden', 'true');
+      $('#userProfileMessageButton').append(icon, document.createTextNode(' Message'));
+    } else {
+      $('#userProfileMessageButton').textContent = 'Chat setup pending';
+    }
+    $('#contactsModal').hidden = true;
+    $('#profileModal').hidden = true;
+    $('#genericModal').hidden = true;
+    $('#userProfileModal').hidden = false;
+    $('#userProfileModal').scrollTop = 0;
+    $('#userProfileClose').focus();
+  }
+  async function messageFromUserProfile() {
+    const person = viewedPeer;
+    if (!person?.username || !person.public_key) {
+      toast('This user has not finished setting up secure chat yet.');
+      return;
+    }
+    closeUserProfile();
+    addChat(person);
+    await openChat(person);
+  }
+  function contactFieldValues(value, keys = []) {
+    const values = Array.isArray(value) ? value : (value == null ? [] : [value]);
+    return values.map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (!entry || typeof entry !== 'object') return '';
+      for (const key of keys) if (typeof entry[key] === 'string') return entry[key];
+      return '';
+    }).map((entry) => entry.trim()).filter(Boolean);
+  }
+  function normalizeImportedContact(raw) {
+    const names = contactFieldValues(raw?.name);
+    const name = typeof raw?.name === 'string' ? raw.name.trim() : (names.join(' ').trim());
+    const phones = [...new Set(contactFieldValues(raw?.phones ?? raw?.tel, ['number', 'value']))].slice(0, 5);
+    const emails = [...new Set(contactFieldValues(raw?.emails ?? raw?.email, ['email', 'value', 'address'])
+      .map((value) => value.toLowerCase()).filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))].slice(0, 5);
+    if (!name && !phones.length && !emails.length) return null;
+    return { name: name || phones[0] || emails[0] || 'Unknown contact', phones, emails, profile: null };
+  }
+  function contactInitials(contact) {
+    return String(contact?.name || '?').trim().split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || '?';
+  }
+  function renderContactEntries(message = '') {
+    const root = $('#contactsList');
+    root.replaceChildren();
+    if (!contactEntries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'contacts-empty';
+      const icon = document.createElement('i');
+      icon.className = 'bi bi-person-lines-fill';
+      icon.setAttribute('aria-hidden', 'true');
+      const heading = document.createElement('strong');
+      heading.textContent = message || 'Find people you know';
+      const detail = document.createElement('p');
+      detail.textContent = contactImportBusy
+        ? 'Checking which contacts are already using FB Chat…'
+        : 'Allow access to your contacts to match existing users. Everyone else will have an Invite option.';
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'primary'; button.textContent = 'Access contacts';
+      button.addEventListener('click', requestContactImport);
+      empty.append(icon, heading, detail, button);
+      root.appendChild(empty);
+      return;
+    }
+    const sorted = contactEntries.map((contact, index) => ({ contact, index }))
+      .sort((a, b) => Number(Boolean(b.contact.profile)) - Number(Boolean(a.contact.profile)) ||
+        a.contact.name.localeCompare(b.contact.name));
+    for (const { contact, index } of sorted) {
+      const row = document.createElement('article');
+      row.className = 'contact-row';
+      const avatar = document.createElement('div');
+      avatar.className = 'chatavatar contact-avatar';
+      if (contact.profile) setAvatar(avatar, contact.profile);
+      else avatar.textContent = contactInitials(contact);
+      if (contact.profile) {
+        avatar.classList.add('profile-avatar-trigger');
+        avatar.setAttribute('role', 'button'); avatar.setAttribute('tabindex', '0');
+        avatar.setAttribute('aria-label', 'View ' + contact.name + ' profile');
+        avatar.addEventListener('click', () => openUserProfile(contact.profile));
+        avatar.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openUserProfile(contact.profile); }
+        });
+      }
+      const copy = document.createElement('div'); copy.className = 'contact-row-copy';
+      const title = document.createElement('strong'); title.textContent = contact.name;
+      const detail = document.createElement('span');
+      detail.textContent = contact.profile
+        ? (contact.profile.username ? '@' + contact.profile.username : 'FB Chat member')
+        : (contact.phones[0] || contact.emails[0] || 'In your contacts');
+      copy.append(title, detail);
+      const action = document.createElement('button');
+      action.type = 'button';
+      if (contact.profile) {
+        action.className = 'contact-action' + (contact.profile.public_key ? '' : ' contact-action-muted');
+        action.textContent = contact.profile.public_key ? 'Chat' : 'On FB Chat';
+        action.disabled = !contact.profile.public_key;
+        action.addEventListener('click', () => {
+          addChat(contact.profile);
+          void openChat(contact.profile);
+        });
+      } else {
+        action.className = 'contact-action invite-action';
+        action.textContent = 'Invite';
+        action.addEventListener('click', () => void inviteContact(contact));
+      }
+      row.append(avatar, copy, action);
+      row.addEventListener('click', (event) => {
+        if (contact.profile && event.target === row) openUserProfile(contact.profile);
+      });
+      root.appendChild(row);
+    }
+    if (message) {
+      const note = document.createElement('p'); note.className = 'contacts-note'; note.textContent = message;
+      root.prepend(note);
+    }
+  }
+  async function loadImportedContacts(rawContacts) {
+    const normalized = (Array.isArray(rawContacts) ? rawContacts : [])
+      .map(normalizeImportedContact).filter(Boolean).slice(0, 400);
+    const unique = new Map();
+    for (const contact of normalized) {
+      const key = norm(contact.name) + '|' + contact.phones.join('|') + '|' + contact.emails.join('|');
+      if (!unique.has(key)) unique.set(key, contact);
+    }
+    contactEntries = [...unique.values()];
+    if (!contactEntries.length) {
+      contactImportBusy = false;
+      $('#contactsStatus').textContent = 'No usable names, phone numbers or emails were found.';
+      renderContactEntries('No contacts to show');
+      return;
+    }
+    $('#contactsStatus').textContent = 'Matching ' + contactEntries.length + ' contacts…';
+    contactImportBusy = true;
+    renderContactEntries();
+    try {
+      // Contact names remain on this device. Only phone/email values are sent
+      // after the user taps Access contacts; the server does not store the list.
+      const data = await api('/api/contacts/match', {
+        method: 'POST',
+        body: JSON.stringify({ contacts: contactEntries.map((contact) => ({ phones: contact.phones, emails: contact.emails })) })
+      });
+      const matches = new Map((data.matches || []).map((match) => [Number(match.index), match.profile]));
+      contactEntries = contactEntries.map((contact, index) => Object.assign({}, contact, {
+        profile: matches.get(index) || null
+      }));
+      const found = contactEntries.filter((contact) => contact.profile).length;
+      $('#contactsStatus').textContent = contactEntries.length + ' contacts · ' + found + ' on FB Chat';
+      renderContactEntries(found ? found + ' people are already on FB Chat.' : 'No matching FB Chat accounts yet.');
+    } catch (error) {
+      contactImportBusy = false;
+      $('#contactsStatus').textContent = 'Contact matching unavailable';
+      renderContactEntries(error.message || 'Could not match contacts right now.');
+      return;
+    }
+    contactImportBusy = false;
+  }
+  function openContactsPage() {
+    if (!me) { showAuth('Sign in before opening contacts.'); return; }
+    $('#profileModal').hidden = true;
+    $('#userProfileModal').hidden = true;
+    $('#genericModal').hidden = true;
+    $('#contactsModal').hidden = false;
+    $('#contactsModal').scrollTop = 0;
+    $('#contactsStatus').textContent = contactEntries.length
+      ? contactEntries.length + ' contacts loaded on this device.'
+      : 'Your contacts stay on this device; only phone/email values are checked for matches.';
+    renderContactEntries();
+    $('#contactsClose').focus();
+  }
+  function closeContactsPage() { $('#contactsModal').hidden = true; }
+  function parseVCard(text) {
+    const unfolded = String(text || '').replace(/\r?\n[ \t]/g, '');
+    const cards = unfolded.split(/BEGIN:VCARD/i).slice(1);
+    return cards.map((chunk) => {
+      const fields = chunk.split(/\r?\n/);
+      const output = { name: '', phones: [], emails: [] };
+      for (const field of fields) {
+        const split = field.indexOf(':');
+        if (split < 0) continue;
+        const header = field.slice(0, split).toUpperCase();
+        const value = field.slice(split + 1).replace(/\\([nN])/g, ' ').replace(/\\([,;\\])/g, '$1').trim();
+        if (header.startsWith('FN') || header.startsWith('N;CHARSET')) { if (!output.name) output.name = value; }
+        else if (header.startsWith('TEL')) output.phones.push(value);
+        else if (header.startsWith('EMAIL')) output.emails.push(value);
+      }
+      if (!output.name) output.name = output.phones[0] || output.emails[0] || 'Contact';
+      return output;
+    });
+  }
+  async function importContactsFile(file) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('Choose a contacts file smaller than 5 MB.'); return; }
+    try {
+      const text = await file.text();
+      const contacts = /BEGIN:VCARD/i.test(text) ? parseVCard(text) : parseContactsCsv(text);
+      await loadImportedContacts(contacts);
+    } catch (error) { toast(error.message || 'Could not read the contacts file.'); }
+    finally { $('#contactsFileInput').value = ''; }
+  }
+  function parseContactsCsv(text) {
+    // Basic CSV: Name, Phone, Email. vCard (.vcf) is recommended for full compatibility.
+    return String(text || '').split(/\r?\n/).slice(1, 401).map((line) => {
+      const cells = line.split(',').map((value) => value.replace(/^["']|["']$/g, '').trim());
+      return { name: cells[0] || '', phones: cells[1] ? [cells[1]] : [], emails: cells[2] ? [cells[2]] : [] };
+    });
+  }
+  async function requestContactImport() {
+    if (!me) { showAuth('Sign in before opening contacts.'); return; }
+    if (contactImportBusy) return;
+    if (window.FBChatNative && typeof window.FBChatNative.getContacts === 'function') {
+      try {
+        if (typeof window.FBChatNative.hasContactsPermission === 'function' &&
+            !window.FBChatNative.hasContactsPermission()) {
+          window.FBChatNative.requestContactsAccess();
+          return;
+        }
+        const parsed = JSON.parse(window.FBChatNative.getContacts() || '[]');
+        if (parsed?.error) { toast('Allow Contacts permission to continue.'); return; }
+        await loadImportedContacts(parsed);
+      } catch (error) {
+        toast(error.message || 'Could not read device contacts.');
+      }
+      return;
+    }
+    if (navigator.contacts && typeof navigator.contacts.select === 'function') {
+      try {
+        const selected = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: true });
+        await loadImportedContacts(selected);
+      } catch (error) {
+        if (error?.name !== 'AbortError') toast('Contact picker could not be opened. You can import a .vcf file instead.');
+      }
+      return;
+    }
+    $('#contactsFileInput').click();
+  }
+  async function inviteContact(contact) {
+    const url = 'https://chat.fashionbazz.in/';
+    const text = 'Hi ' + (contact?.name || 'there') + '! Join me on FB Chat for private conversations: ' + url;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Join me on FB Chat', text, url });
+        return;
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Invite message copied. Send it to ' + (contact?.name || 'your contact') + '.');
+    } catch {
+      window.prompt('Copy this FB Chat invitation:', text);
+    }
+  }
+  window.fbchatContactsPermissionResult = (granted) => {
+    if (!granted) { toast('Contacts permission was not granted.'); return; }
+    if (!me || $('#contactsModal').hidden) return;
+    try {
+      const raw = JSON.parse(window.FBChatNative.getContacts() || '[]');
+      if (raw?.error) { toast('Could not read device contacts.'); return; }
+      void loadImportedContacts(raw);
+    } catch (error) { toast(error.message || 'Could not read device contacts.'); }
+  };
   function infoModal(title, description, actions = []) {
     $('#genericTitle').textContent = title; $('#genericDescription').textContent = description;
     $('#genericLabel').hidden = true; $('#genericInput').hidden = true; $('#genericSubmit').hidden = true; $('#genericForm').hidden = true;
@@ -1846,7 +2140,18 @@
       histories.set(activePeer.id, filtered); renderHistory(activePeer.id); histories.set(activePeer.id, original);
       if (!filtered.length) toast('No matching messages in loaded history.');
     });
-    $('#chatDetails').addEventListener('click', securityDialog);
+    $('#activeAvatar').addEventListener('click', () => { if (activePeer) openUserProfile(activePeer); });
+    $('#activeAvatar').addEventListener('keydown', (event) => {
+      if ((event.key === 'Enter' || event.key === ' ') && activePeer) { event.preventDefault(); openUserProfile(activePeer); }
+    });
+    $('#userProfileClose').addEventListener('click', closeUserProfile);
+    $('#userProfileDoneButton').addEventListener('click', closeUserProfile);
+    $('#userProfileMessageButton').addEventListener('click', () => void messageFromUserProfile());
+    $('#contactsClose').addEventListener('click', closeContactsPage);
+    $('#contactsImportButton').addEventListener('click', requestContactImport);
+    $('#contactsFileInput').addEventListener('change', () => void importContactsFile($('#contactsFileInput').files?.[0]));
+    $('#contactsModal').addEventListener('click', (event) => { if (event.target === $('#contactsModal')) closeContactsPage(); });
+    $('#userProfileModal').addEventListener('click', (event) => { if (event.target === $('#userProfileModal')) closeUserProfile(); });
     $('#profileButton').addEventListener('click', profileDialog);
     $('#mobileProfileButton').addEventListener('click', profileDialog);
     $('#profileClose').addEventListener('click', closeProfileDialog);
@@ -1869,8 +2174,12 @@
       finally { button.disabled = false; button.textContent = 'Change photo'; $('#profileAvatarFile').value = ''; }
     });
     $('#profileSignOutButton').addEventListener('click', () => { closeProfileDialog(); void signOut(); });
+    $('#userProfileDoneButton').addEventListener('click', closeUserProfile);
     window.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !$('#profileModal').hidden) closeProfileDialog();
+      if (event.key !== 'Escape') return;
+      if (!$('#userProfileModal').hidden) closeUserProfile();
+      else if (!$('#contactsModal').hidden) closeContactsPage();
+      else if (!$('#profileModal').hidden) closeProfileDialog();
     });
     $('#settingsButton').addEventListener('click', settingsDialog);
     const bottomNavItems = $$('[data-bottom-nav]');
@@ -1888,6 +2197,7 @@
       }
       $('#app').classList.remove('chat-open');
       if (section === 'calls') { showCallHistory(); return; }
+      if (section === 'contacts') { openContactsPage(); return; }
       if (section === 'profile') { void profileDialog(); return; }
       if (section === 'settings') { void settingsDialog(); return; }
     };

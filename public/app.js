@@ -15,6 +15,44 @@
   let chatOpenRequest = 0, viewedPeer = null, contactEntries = [], contactImportBusy = false;
 
   const norm = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const THEME_STORAGE_KEY = 'fbchat-theme-preference-v1';
+  const PRIVACY_CONSENT_KEY = 'fbchat-privacy-consent-v1';
+  function applyTheme(theme) {
+    const selected = ['system', 'light', 'dark'].includes(theme) ? theme : 'system';
+    try { localStorage.setItem(THEME_STORAGE_KEY, selected); } catch {}
+    document.body.dataset.theme = selected;
+    document.documentElement.dataset.theme = selected;
+    const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
+    const color = selected === 'light' || (selected === 'system' && prefersLight) ? '#f0f2f5' : '#111b21';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = color;
+  }
+  function readPrivacyConsent() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PRIVACY_CONSENT_KEY) || '{}');
+      return {
+        analytics: saved.analytics === true,
+        adsPersonalization: saved.adsPersonalization === true,
+        aiTraining: saved.aiTraining === true,
+        updatedAt: typeof saved.updatedAt === 'string' ? saved.updatedAt : null
+      };
+    } catch {
+      return { analytics: false, adsPersonalization: false, aiTraining: false, updatedAt: null };
+    }
+  }
+  function savePrivacyConsent(key, enabled) {
+    const current = readPrivacyConsent();
+    current[key] = enabled === true;
+    current.updatedAt = new Date().toISOString();
+    try { localStorage.setItem(PRIVACY_CONSENT_KEY, JSON.stringify(current)); } catch {}
+  }
+  try {
+    const initialTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'system';
+    applyTheme(initialTheme);
+    window.matchMedia?.('(prefers-color-scheme: light)').addEventListener?.('change', () => {
+      if ((localStorage.getItem(THEME_STORAGE_KEY) || 'system') === 'system') applyTheme('system');
+    });
+  } catch { applyTheme('system'); }
   const to64 = (buffer) => {
     let raw = '';
     for (const byte of new Uint8Array(buffer)) raw += String.fromCharCode(byte);
@@ -1027,6 +1065,7 @@
     if (!me) { showAuth('Sign in before opening contacts.'); return; }
     $('#profileModal').hidden = true;
     $('#userProfileModal').hidden = true;
+    $('#callsModal').hidden = true;
     $('#genericModal').hidden = true;
     $('#contactsModal').hidden = false;
     $('#contactsModal').scrollTop = 0;
@@ -1628,20 +1667,58 @@
     toast(isSpeakerEnabled ? 'Speakerphone enabled.' : 'Earpiece mode selected.', 1500);
   }
   function minimizeCall() { if (peerConnection) showCallUi(false); }
-  function showCallHistory() {
+  function renderCallsPage() {
     const entries = readCallHistory();
-    if (!entries.length) return infoModal('Calls', 'Recent voice and video calls will appear here on this device.', [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]);
-    const summary = entries.slice(0,15).map(item => {
+    const list = $('#callsList');
+    const empty = $('#callsEmpty');
+    if (!list || !empty) return;
+    list.replaceChildren();
+    empty.hidden = entries.length > 0;
+    for (const item of entries.slice(0, 50)) {
+      const row = document.createElement('div');
+      row.className = 'calls-entry';
+      const avatar = document.createElement('span');
+      avatar.className = 'calls-entry-avatar';
+      avatar.textContent = String(item.peer || '?').replace(/^@/, '').slice(0, 1).toUpperCase();
+      const copy = document.createElement('div');
+      copy.className = 'calls-entry-copy';
+      const title = document.createElement('strong');
+      title.textContent = '@' + String(item.peer || 'unknown');
       const direction = item.direction === 'incoming' ? 'Incoming' : 'Outgoing';
-      const type = item.kind === 'video' ? 'video' : 'voice';
-      const state = item.state === 'missed' ? 'missed' : item.state === 'rejected' ? 'declined' : item.state === 'completed' ? formatCallDuration(item.duration || 0) : item.state;
-      return direction + ' ' + type + ' call with @' + item.peer + ' · ' + state + ' · ' + new Date(item.at).toLocaleString();
-    }).join('\n');
-    infoModal('Recent calls', summary, [
-      { label: 'Clear history on this device', className: 'danger-action', action: () => { localStorage.removeItem('fbchat-call-history'); $('#genericModal').hidden = true; toast('Call history cleared on this device.'); } },
-      { label: 'Close', action: () => { $('#genericModal').hidden = true; } }
-    ]);
+      const type = item.kind === 'video' ? 'Video call' : 'Voice call';
+      const state = item.state === 'missed' ? 'Missed' : item.state === 'rejected' ? 'Declined' : item.state === 'completed' ? formatCallDuration(item.duration || 0) : String(item.state || 'Call');
+      const details = document.createElement('span');
+      const when = new Date(item.at);
+      details.textContent = direction + ' · ' + state + ' · ' + (Number.isNaN(when.getTime()) ? '' : when.toLocaleString());
+      copy.append(title, details);
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'calls-entry-action';
+      action.title = 'Call again';
+      action.setAttribute('aria-label', 'Call @' + String(item.peer || 'user') + ' again');
+      action.innerHTML = '<i class="bi ' + (item.kind === 'video' ? 'bi-camera-video-fill' : 'bi-telephone-fill') + '" aria-hidden="true"></i>';
+      action.addEventListener('click', async () => {
+        if (!item.peer) return toast('This call has no saved username.');
+        try {
+          $('#callsModal').hidden = true;
+          await openChatByUsername(item.peer);
+          await startCall(item.kind === 'video' ? 'video' : 'audio');
+        } catch (error) { toast(error?.message || 'Could not start the call.'); }
+      });
+      row.append(avatar, copy, action);
+      list.appendChild(row);
+    }
   }
+  function showCallHistory() {
+    $('#profileModal').hidden = true;
+    $('#contactsModal').hidden = true;
+    $('#userProfileModal').hidden = true;
+    $('#genericModal').hidden = true;
+    $('#callsModal').hidden = false;
+    $('#callsModal').scrollTop = 0;
+    renderCallsPage();
+  }
+  function closeCallsPage() { $('#callsModal').hidden = true; }
   function enableMediaControls() {
     if ($('#voiceCallButton')) $('#voiceCallButton').onclick = () => void startCall('audio');
     if ($('#videoCallButton')) $('#videoCallButton').onclick = () => void startCall('video');
@@ -1763,6 +1840,7 @@
     $('#genericModal').hidden = true;
     $('#contactsModal').hidden = true;
     $('#userProfileModal').hidden = true;
+    $('#callsModal').hidden = true;
     $('#profileModal').hidden = false;
     $('#profileModal').scrollTop = 0;
     await renderProfileSettings();
@@ -1992,6 +2070,34 @@
       getMediaPermissionStatus('microphone'), getMediaPermissionStatus('camera')
     ]);
 
+    const appearance = addProfileSettingsGroup(root, 'Appearance');
+    const themeRow = document.createElement('div');
+    themeRow.className = 'profile-setting-row';
+    const themeIcon = document.createElement('span');
+    themeIcon.className = 'profile-setting-icon';
+    themeIcon.innerHTML = '<i class="bi bi-circle-half" aria-hidden="true"></i>';
+    const themeCopy = document.createElement('div');
+    themeCopy.className = 'profile-setting-copy';
+    const themeTitle = document.createElement('strong');
+    themeTitle.textContent = 'App theme';
+    const themeHelp = document.createElement('small');
+    themeHelp.textContent = 'Follow your device, or choose light or dark mode.';
+    themeCopy.append(themeTitle, themeHelp);
+    const themeSelect = document.createElement('select');
+    themeSelect.className = 'theme-select';
+    themeSelect.setAttribute('aria-label', 'App theme');
+    [['system','System default'],['light','Light'],['dark','Dark']].forEach(([value,label]) => {
+      const option = document.createElement('option');
+      option.value = value; option.textContent = label; themeSelect.appendChild(option);
+    });
+    themeSelect.value = localStorage.getItem(THEME_STORAGE_KEY) || 'system';
+    themeSelect.addEventListener('change', () => {
+      applyTheme(themeSelect.value);
+      toast('Theme updated.');
+    });
+    themeRow.append(themeIcon, themeCopy, themeSelect);
+    appearance.appendChild(themeRow);
+
     const notifications = addProfileSettingsGroup(root, 'Notifications');
     appendProfileSettingRow(
       notifications, 'bi-bell-fill', 'Message sound',
@@ -2061,6 +2167,39 @@
         'Messages are encrypted in this browser using ECDH P-256 and AES-GCM. The database stores ciphertext. This prototype has not had an independent security audit.',
         [{ label: 'Close', action: () => { $('#genericModal').hidden = true; } }]
       )));
+    const consentIntro = document.createElement('div');
+    consentIntro.className = 'privacy-consent-explainer';
+    const consentHeading = document.createElement('strong');
+    consentHeading.textContent = 'Optional data-use choices';
+    const consentText = document.createElement('p');
+    consentText.textContent = 'Each option is separate and starts OFF. This build does not have an analytics tracker, ad-personalization network or AI-training pipeline connected; saving a choice below stores it on this device only and does not upload data. We will ask again with updated details before enabling any future collection. Private encrypted message contents, passwords and address-book names are not collected for these purposes.';
+    const consentStatus = document.createElement('span');
+    consentStatus.className = 'privacy-consent-status';
+    consentStatus.innerHTML = '<i class="bi bi-shield-check" aria-hidden="true"></i><span>Optional collection is not active</span>';
+    consentIntro.append(consentHeading, consentText, consentStatus);
+    privacy.insertBefore(consentIntro, privacy.children[1] || null);
+    const consent = readPrivacyConsent();
+    const consentSwitch = (key, title, description) => profileSwitch(
+      title, consent[key], consent[key] ? 'Choice saved on this device; collection is not active.' : 'Off · no data is sent for this purpose.',
+      async (enabled) => {
+        savePrivacyConsent(key, enabled);
+        return {
+          checked: enabled,
+          status: enabled
+            ? 'Opt-in saved on this device. No collection starts in this build.'
+            : 'Off. No data is sent for this purpose.'
+        };
+      }
+    );
+    appendProfileSettingRow(privacy, 'bi-graph-up', 'Usage analytics',
+      'Optional basic screen usage and reliability statistics, only after future rollout and notice.',
+      consentSwitch('analytics', 'Usage analytics', 'Basic usage statistics'));
+    appendProfileSettingRow(privacy, 'bi-megaphone-fill', 'Personalized advertisements',
+      'Optional ad relevance and measurement data if advertising is added in a future release.',
+      consentSwitch('adsPersonalization', 'Personalized advertisements', 'Ad personalization'));
+    appendProfileSettingRow(privacy, 'bi-stars', 'AI model improvement',
+      'Only explicitly submitted feedback or content could be considered after a future rollout. Encrypted chats are not readable by the server.',
+      consentSwitch('aiTraining', 'AI model improvement', 'AI improvement'));
     if (nativeApp) {
       const device = addProfileSettingsGroup(root, 'App & device');
       appendProfileSettingRow(device, 'bi-arrow-down-circle-fill', 'App updates',
@@ -2174,15 +2313,15 @@
     $('#userProfileClose').addEventListener('click', closeUserProfile);
     $('#userProfileDoneButton').addEventListener('click', closeUserProfile);
     $('#userProfileMessageButton').addEventListener('click', () => void messageFromUserProfile());
-    $('#contactsClose').addEventListener('click', closeContactsPage);
+    $('#contactsClose').addEventListener('click', () => showMainSection('chats'));
     $('#contactsImportButton').addEventListener('click', requestContactImport);
     $('#contactsFileInput').addEventListener('change', () => void importContactsFile($('#contactsFileInput').files?.[0]));
     $('#contactsSearch').addEventListener('input', () => renderContactEntries());
     $('#contactsModal').addEventListener('click', (event) => { if (event.target === $('#contactsModal')) closeContactsPage(); });
     $('#userProfileModal').addEventListener('click', (event) => { if (event.target === $('#userProfileModal')) closeUserProfile(); });
-    $('#profileButton').addEventListener('click', profileDialog);
-    $('#mobileProfileButton').addEventListener('click', profileDialog);
-    $('#profileClose').addEventListener('click', closeProfileDialog);
+    $('#profileButton').addEventListener('click', () => showMainSection('profile'));
+    $('#mobileProfileButton').addEventListener('click', () => showMainSection('profile'));
+    $('#profileClose').addEventListener('click', () => showMainSection('chats'));
     $('#profileForm').addEventListener('submit', saveProfile);
     $('#profileBioInput').addEventListener('input', () => {
       $('#profileBioCount').textContent = String($('#profileBioInput').value.length);
@@ -2206,24 +2345,36 @@
     window.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
       if (!$('#userProfileModal').hidden) closeUserProfile();
-      else if (!$('#contactsModal').hidden) closeContactsPage();
-      else if (!$('#profileModal').hidden) closeProfileDialog();
+      else if (!$('#contactsModal').hidden) showMainSection('chats');
+      else if (!$('#profileModal').hidden) showMainSection('chats');
     });
-    $('#settingsButton').addEventListener('click', settingsDialog);
-    const bottomNavItems = $$('[data-bottom-nav]');
+    $('#settingsButton').addEventListener('click', () => showMainSection('settings'));
+    $('#callsClose').addEventListener('click', () => showMainSection('chats'));
+    $('#clearCallsButton').addEventListener('click', () => {
+      localStorage.removeItem('fbchat-call-history');
+      renderCallsPage();
+      toast('Call history cleared on this device.');
+    });
+    const bottomNavItems = $('[data-bottom-nav]');
     const showMainSection = (section) => {
+      const visualSection = section === 'settings' ? 'profile' : section;
       bottomNavItems.forEach((item) => {
-        const active = item.dataset.bottomNav === section;
+        const active = item.dataset.bottomNav === visualSection;
         item.classList.toggle('active', active);
         if (active) item.setAttribute('aria-current', 'page');
         else item.removeAttribute('aria-current');
       });
-      $$('[data-rail]').forEach((item) => item.classList.toggle('active', item.dataset.rail === section));
+      $('[data-rail]').forEach((item) => item.classList.toggle('active', item.dataset.rail === visualSection));
+      $('#app').classList.remove('chat-open');
       if (section === 'chats') {
-        $('#app').classList.remove('chat-open');
+        $('#callsModal').hidden = true;
+        $('#contactsModal').hidden = true;
+        $('#profileModal').hidden = true;
+        $('#userProfileModal').hidden = true;
+        $('#genericModal').hidden = true;
         return;
       }
-      $('#app').classList.remove('chat-open');
+      $('#genericModal').hidden = true;
       if (section === 'calls') { showCallHistory(); return; }
       if (section === 'contacts') { openContactsPage(); return; }
       if (section === 'profile') { void profileDialog(); return; }
